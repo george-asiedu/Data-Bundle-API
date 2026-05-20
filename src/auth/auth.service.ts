@@ -12,13 +12,9 @@ import { sign, verify } from 'jsonwebtoken';
 
 import { UserRepository } from './repositories/user.repository';
 import { RegisterDto } from './dto/register.dto';
-import { QueryRunnerExec } from 'src/shared/services/query-runner-exec.service';
-import { ApplicationException } from 'src/lib/exception/app.exception';
 import { AccountStatus, OAuthProfile } from './auth.types';
 import { EmailVerificationMailer } from './mailer/email-verification.mailer';
-import { TokenGenerator } from 'src/shared/services/token-generator.service';
 import { EmailVerificationRepository } from './repositories/email-verification.repository';
-import { MessageOnly } from 'src/lib/utils/types.utils';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RequestEmailResetMailer } from './mailer/request-email-reset.mailer';
 import { PasswordResetRepository } from './repositories/password-reset.repository';
@@ -28,6 +24,10 @@ import { ConfirmationMailer } from './mailer/confirmation.mailer';
 import { ResetPasswordMailer } from './mailer/reset-password.mailer';
 import { LoginDto } from './dto/login.dto';
 import { Request } from 'express';
+import { ApplicationException } from '../lib/exception/app.exception';
+import { MessageOnly } from '../lib/utils/types.utils';
+import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
+import { TokenGenerator } from '../shared/services/token-generator.service';
 
 @Injectable()
 export class AuthService {
@@ -102,7 +102,6 @@ export class AuthService {
       fullName: body.fullName,
       email: body.email,
       password: await this._hashPassword(body.password),
-      role: body.role,
     });
 
     const emailVerification = await this._emailVerificationRepo.add(
@@ -304,6 +303,8 @@ export class AuthService {
   }
 
   async login(body: LoginDto, _req: Request) {
+    let queryRunner: QueryRunner | undefined = undefined;
+
     try {
       const user = await this._userRepo.find(body.email);
       const hashedPassword = user?.password ?? '';
@@ -317,6 +318,12 @@ export class AuthService {
         // });
         throw new ApplicationException('Invalid email and or password');
       }
+
+      queryRunner = await this._queryRunnerExec.getRunner();
+      await this._userRepo.update(queryRunner, user, {
+        lastLoginAt: new Date(),
+      });
+      await this._queryRunnerExec.commit(queryRunner);
 
       const accessToken = this._generateAccessToken(user.id);
       const refreshToken = this._generateRefreshToken(user.id);
@@ -337,11 +344,12 @@ export class AuthService {
         },
       };
     } catch (error) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
 
       this._logger.error((error as Error).message);
-
       throw new InternalServerErrorException('Something went wrong');
     }
   }
@@ -422,6 +430,9 @@ export class AuthService {
         profile,
       );
 
+      await this._userRepo.update(queryRunner, user, {
+        lastLoginAt: new Date(),
+      });
       await this._queryRunnerExec.commit(queryRunner);
 
       // await this._auditService.logAction(LogAction.LOGIN, user.id, {
