@@ -28,8 +28,8 @@ async function bootstrap() {
   const isDevEnvironment =
     configService.get<string>('NODE_ENV') === 'development';
   const options = new DocumentBuilder()
-    .setTitle('DATA BUNDLE API Documentation')
-    .setDescription('REST API for DATA BUNDLE Web Application')
+    .setTitle('INFINITY DATA MALL API Documentation')
+    .setDescription('REST API for INFINITY DATA MALL Web Application')
     .setVersion('1.0.0')
     .addServer(
       isDevEnvironment ? localServerUrl : liveServerUrl,
