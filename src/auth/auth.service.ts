@@ -78,9 +78,6 @@ export class AuthService {
       const { user, emailVerification } =
         await this._addUserAndEmailVerification(queryRunner, body);
 
-      user.accountStatus = AccountStatus.PENDING_PAYMENT;
-      await queryRunner.manager.save(user);
-
       await this._walletRepo.add(queryRunner, { balance: 0 }, user);
 
       const registrationFeeGhs = 1;
@@ -347,7 +344,6 @@ export class AuthService {
       }
 
       if (user.accountStatus === AccountStatus.PENDING_PAYMENT) {
-        // Generate a fresh payment URL for them if they lost the original one
         const registrationFeeGhs = 1;
         const paystackSession =
           await this._paymentService.initializeTransactionForRegistration(
