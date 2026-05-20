@@ -1,0 +1,11 @@
+export enum TransactionType {
+  CREDIT = 'CREDIT',
+  DEBIT = 'DEBIT',
+}
+
+export enum TransactionPurpose {
+  TOP_UP = 'TOP_UP',
+  BUNDLE_PURCHASE = 'BUNDLE_PURCHASE',
+  REGISTRATION_FEE = 'REGISTRATION_FEE',
+  WITHDRAWAL = 'WITHDRAWAL',
+}
