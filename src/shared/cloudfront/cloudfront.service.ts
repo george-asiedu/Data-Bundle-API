@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -18,7 +16,7 @@ export class CloudFrontService {
 
   constructor(private readonly _configService: ConfigService) {
     this._lambda = new LambdaClient({
-      region: this._configService.get<string>('AWS_REGION') as string,
+      region: this._configService.get<string>('AWS_REGION'),
       credentials: {
         accessKeyId: this._configService.get<string>(
           'AWS_ACCESS_KEY_ID',
@@ -49,14 +47,14 @@ export class CloudFrontService {
 
     const params: InvokeCommandInput = {
       FunctionName: this._lambdaFunctionName,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       InvocationType: InvocationType.Event,
       Payload: Buffer.from(JSON.stringify(payload)),
     };
 
     try {
       const command = new InvokeCommand(params);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       await this._lambda.send(command);
 
       this._logger.log(
