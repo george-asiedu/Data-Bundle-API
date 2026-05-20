@@ -26,10 +26,13 @@ export class UserRepository {
    */
   async add(queryRunner: QueryRunner, data: CreateUserType): Promise<User> {
     const user = new User();
-    user.id = await this._getNextId(data.role);
-    user.role = data.role;
+    const assignedRole = data.role ?? Role.AGENT;
+
+    user.id = await this._getNextId(assignedRole);
+    user.role = assignedRole;
     user.email = data.email;
     user.password = data.password;
+    user.fullName = data.fullName;
     user.provider = AuthProvider.LOCAL;
     return await queryRunner.manager.save(user);
   }
@@ -71,6 +74,7 @@ export class UserRepository {
         | 'imageLongUrl'
         | 'accountStatus'
         | 'role'
+        | 'lastLoginAt'
       >
     >,
   ) {
@@ -80,6 +84,11 @@ export class UserRepository {
     user.imageLongUrl = data.imageLongUrl ?? user.imageLongUrl;
     user.accountStatus = data.accountStatus ?? user.accountStatus;
     user.role = data.role ?? user.role;
+
+    if (data.lastLoginAt !== undefined) {
+      user.lastLoginAt = data.lastLoginAt;
+    }
+
     return await queryRunner.manager.save(user);
   }
 
@@ -130,20 +139,12 @@ export class UserRepository {
     // create a brand new user
     const newUser = new User();
 
-    // Ensure the role is valid, fallback to AGENT if missing or invalid
-    const requestedRole = profile.role;
-    const assignedRole: Role = Object.values(Role).includes(
-      requestedRole as Role,
-    )
-      ? (requestedRole as Role)
-      : Role.AGENT;
-
-    newUser.id = await this._getNextId(assignedRole);
+    newUser.id = await this._getNextId(Role.AGENT);
     newUser.email = profile.email;
     newUser.fullName = profile.fullName;
     newUser.imageLongUrl = profile.imageUrl;
     newUser.imageShortUrl = profile.imageUrl;
-    newUser.role = assignedRole;
+    newUser.role = Role.AGENT;
     newUser.provider = profile.provider;
     newUser.providerId = profile.providerId;
     newUser.accountStatus = AccountStatus.ACTIVE;
