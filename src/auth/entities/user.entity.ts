@@ -26,7 +26,7 @@ export class User {
   @Column({ name: 'phone_number', unique: true, nullable: true })
   phoneNumber?: string;
 
-  @Column({ type: 'enum', enum: Role })
+  @Column({ name: 'role', type: 'enum', enum: Role, default: Role.AGENT })
   role: Role;
 
   @Column({ name: 'full_name', length: 100, nullable: true })
@@ -40,7 +40,12 @@ export class User {
   })
   accountStatus?: AccountStatus;
 
-  @Column({ type: 'enum', enum: AuthProvider, default: AuthProvider.LOCAL })
+  @Column({
+    name: 'provider',
+    type: 'enum',
+    enum: AuthProvider,
+    default: AuthProvider.LOCAL,
+  })
   provider: AuthProvider;
 
   @Column({ name: 'provider_id', nullable: true })
