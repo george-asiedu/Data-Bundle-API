@@ -23,10 +23,10 @@ import { PaymentService } from './payment.service';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { CurrentUser } from '../shared/decorators/current-user.decorator';
+import { User } from '../auth/entities/user.entity';
 
 @ApiTags('Payment')
-@UseGuards(AuthGuard)
-@ApiBearerAuth()
 @Controller('payment')
 export class PaymentController {
   private readonly _logger = new Logger(PaymentController.name);
@@ -41,18 +41,28 @@ export class PaymentController {
     ) as string;
   }
 
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Initialize a new payment transaction' })
   @HttpCode(HttpStatus.OK)
   @Post('initialize')
-  async initializePayment(@Body() body: InitializePaymentDto) {
-    return this._paymentService.initializeTransaction(body);
+  async initializePayment(
+    @Body() body: InitializePaymentDto,
+    @CurrentUser() user: User,
+  ) {
+    return this._paymentService.initializeTransaction(body, user.id);
   }
 
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Verify a payment transaction' })
   @HttpCode(HttpStatus.OK)
   @Get('verify/:reference')
-  async verifyPayment(@Param('reference') reference: string) {
-    return this._paymentService.verifyTransaction(reference);
+  async verifyPayment(
+    @Param('reference') reference: string,
+    @CurrentUser() user: User,
+  ) {
+    return this._paymentService.verifyTransaction(reference, user.id);
   }
 
   /**
@@ -66,7 +76,7 @@ export class PaymentController {
   })
   @HttpCode(HttpStatus.OK)
   @Post('webhook')
-  handleWebhook(
+  async handleWebhook(
     @Headers('x-paystack-signature') signature: string,
     @Body() payload: any,
   ) {
@@ -77,18 +87,11 @@ export class PaymentController {
       .digest('hex');
 
     if (hash !== signature) {
+      this._logger.warn('Invalid Paystack webhook signature');
       return { message: 'Invalid signature' };
     }
 
-    // Handle specific events
-    switch (payload.event) {
-      case 'charge.success':
-        this._logger.log('Payment successful:', payload.data);
-        break;
-      case 'transfer.success':
-        this._logger.log('Transfer successful:', payload.data);
-        break;
-    }
+    await this._paymentService.processWebhookEvent(payload);
 
     return { message: 'Webhook received' };
   }
