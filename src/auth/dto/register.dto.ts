@@ -1,13 +1,11 @@
 import {
   IsEmail,
-  IsEnum,
   IsNotEmpty,
   IsString,
   IsStrongPassword,
   MinLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Role } from '../auth.types';
 
 export class RegisterDto {
   @IsString()
@@ -19,13 +17,6 @@ export class RegisterDto {
   @IsEmail()
   @ApiProperty()
   email: string;
-
-  @IsNotEmpty()
-  @IsEnum(Role, {
-    message: `Role must be one of the following: ${Object.values(Role).join(', ')}`,
-  })
-  @ApiProperty()
-  role: Role;
 
   @IsNotEmpty()
   @MinLength(8, { message: 'Must be at least 8 characters long' })
