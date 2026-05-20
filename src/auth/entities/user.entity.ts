@@ -5,11 +5,15 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
+  OneToOne,
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { AccountStatus, AuthProvider, Role } from '../auth.types';
+import { Wallet } from '../../payment/entities/wallet.entity';
+import { Transaction } from '../../payment/entities/transactions.entity';
 
 @Entity({ name: 'users' })
 export class User {
@@ -36,7 +40,7 @@ export class User {
     name: 'account_status',
     type: 'enum',
     enum: AccountStatus,
-    default: AccountStatus.PENDING_VERIFICATION,
+    default: AccountStatus.PENDING_PAYMENT,
   })
   accountStatus?: AccountStatus;
 
@@ -63,6 +67,12 @@ export class User {
   @ManyToOne(() => User)
   @JoinColumn({ name: 'parent_agent_id' })
   parentAgent?: User;
+
+  @OneToOne(() => Wallet, (wallet) => wallet.user)
+  wallet?: Wallet;
+
+  @OneToMany(() => Transaction, (transaction) => transaction.user)
+  transactions?: Array<Transaction>;
 
   @Column({ name: 'mfa_enabled', type: 'boolean', default: false })
   mfaEnabled: boolean;
