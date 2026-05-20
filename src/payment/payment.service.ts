@@ -115,16 +115,15 @@ export class PaymentService {
    * @returns A promise resolving to the transaction initialization response
    */
   async initializeTransactionForRegistration(
-    email: string,
-    amount: number,
+    payload: InitializePaymentDto,
     userId: string,
   ) {
     try {
       const response = await axios.post(
         `${this._paystackBaseUrl}/transaction/initialize`,
         {
-          email,
-          amount: amount * 100,
+          email: payload.email,
+          amount: payload.amount * 100,
           metadata: {
             userId,
             purpose: TransactionPurpose.REGISTRATION_FEE,

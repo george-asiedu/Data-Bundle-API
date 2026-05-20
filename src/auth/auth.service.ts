@@ -83,8 +83,10 @@ export class AuthService {
       const registrationFeeGhs = 1;
       const paystackSession =
         await this._paymentService.initializeTransactionForRegistration(
-          user.email,
-          registrationFeeGhs,
+          {
+            email: user.email,
+            amount: registrationFeeGhs,
+          },
           user.id,
         );
 
@@ -347,8 +349,10 @@ export class AuthService {
         const registrationFeeGhs = 1;
         const paystackSession =
           await this._paymentService.initializeTransactionForRegistration(
-            user.email,
-            registrationFeeGhs,
+            {
+              email: user.email,
+              amount: registrationFeeGhs,
+            },
             user.id,
           );
 

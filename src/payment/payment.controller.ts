@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   Body,
@@ -51,6 +50,21 @@ export class PaymentController {
     @CurrentUser() user: User,
   ) {
     return this._paymentService.initializeTransaction(body, user.id);
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Initialize a registration payment transaction' })
+  @HttpCode(HttpStatus.OK)
+  @Post('initialize/registration')
+  async initializeRegistrationPayment(
+    @Body() body: InitializePaymentDto,
+    @CurrentUser() user: User,
+  ) {
+    return this._paymentService.initializeTransactionForRegistration(
+      body,
+      user.id,
+    );
   }
 
   @UseGuards(AuthGuard)
