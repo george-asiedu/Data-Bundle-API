@@ -8,6 +8,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { SharedModule } from './shared/shared.module';
 import { UploadModule } from './upload/upload.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UploadModule } from './upload/upload.module';
     AuthModule,
     SharedModule,
     UploadModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
