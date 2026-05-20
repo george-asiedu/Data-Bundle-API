@@ -1,4 +1,4 @@
-import { swaggerServerErrorResponse } from 'src/lib/utils/swagger-error-response.utils';
+import { swaggerServerErrorResponse } from '../lib/utils/swagger-error-response.utils';
 
 const unauthorizedResponse = {
   401: {

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { BaseMailer } from 'src/lib/mailer/base-mailer.utils';
 import { RequestEmailResetType } from '../auth.types';
+import { BaseMailer } from '../../lib/mailer/base-mailer.utils';
 
 @Injectable()
 export class RequestEmailResetMailer extends BaseMailer<RequestEmailResetType> {

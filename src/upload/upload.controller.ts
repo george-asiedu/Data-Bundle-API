@@ -9,9 +9,9 @@ import {
   swaggerInitiateUploadResponse,
 } from './upload.swagger';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { AuthGuard } from 'src/auth/guards/auth.guard';
-import { User } from 'src/auth/entities/user.entity';
-import { CurrentUser } from 'src/shared/decorators/current-user.decorator';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { CurrentUser } from '../shared/decorators/current-user.decorator';
+import { User } from '../auth/entities/user.entity';
 
 @UseGuards(AuthGuard)
 @ApiBearerAuth()

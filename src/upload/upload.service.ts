@@ -7,7 +7,7 @@ import { S3Service } from '../shared/s3/s3.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { AbortUploadDto } from './dto/abort-upload.dto';
-import { User } from 'src/auth/entities/user.entity';
+import { User } from '../auth/entities/user.entity';
 
 @Injectable()
 export class UploadService {

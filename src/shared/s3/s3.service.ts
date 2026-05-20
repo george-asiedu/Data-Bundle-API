@@ -9,8 +9,8 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UploadCategory } from 'src/upload/upload.types';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadCategory } from '../../upload/upload.types';
 
 @Injectable()
 export class S3Service {
@@ -186,7 +186,7 @@ export class S3Service {
   /**
    * Generates a structured S3 key scoped to a user and upload category.
    * Format: {category}/{userId}/{uuid}_{sanitized_filename}
-   * e.g. portfolios/usr-123/a1b2c3_my_design.png
+   * e.g. documents/usr-123/a1b2c3_my_document.pdf
    */
   generateS3Key(
     userId: string,

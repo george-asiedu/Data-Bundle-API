@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-import { BaseMailer } from 'src/lib/mailer/base-mailer.utils';
-import { Data } from 'src/lib/mailer/types.mailer';
+import { Data } from '../../lib/mailer/types.mailer';
+import { BaseMailer } from '../../lib/mailer/base-mailer.utils';
 
 @Injectable()
 export class ResetPasswordMailer extends BaseMailer<Data> {
