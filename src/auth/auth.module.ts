@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthController } from './auth.controller';
@@ -17,11 +17,13 @@ import { PasswordReset } from './entities/password-reset.entity';
 import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { PassportModule } from '@nestjs/passport';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, EmailVerification, PasswordReset]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    forwardRef(() => PaymentModule),
   ],
   controllers: [AuthController],
   providers: [
