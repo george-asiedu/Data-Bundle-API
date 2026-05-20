@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   BadRequestException,
   Injectable,
@@ -25,9 +27,11 @@ import { ResetPasswordMailer } from './mailer/reset-password.mailer';
 import { LoginDto } from './dto/login.dto';
 import { Request } from 'express';
 import { ApplicationException } from '../lib/exception/app.exception';
-import { MessageOnly } from '../lib/utils/types.utils';
+import { DataMessage, MessageOnly } from '../lib/utils/types.utils';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { TokenGenerator } from '../shared/services/token-generator.service';
+import { PaymentService } from '../payment/payment.service';
+import { WalletRepository } from '../payment/repositories/wallet.repository';
 
 @Injectable()
 export class AuthService {
@@ -49,6 +53,8 @@ export class AuthService {
     private readonly _emailVerificationMailer: EmailVerificationMailer,
     private readonly _requestEmailResetMailer: RequestEmailResetMailer,
     private readonly _emailVerificationRepo: EmailVerificationRepository,
+    private readonly _paymentService: PaymentService,
+    private readonly _walletRepo: WalletRepository,
   ) {
     this._secretKey = this._configService.get('SECRET_KEY') as string;
     this._frontendUrl = this._configService.get('FRONTEND_URL') as string;
@@ -60,18 +66,30 @@ export class AuthService {
     ) as string;
   }
 
-  async register(body: RegisterDto): Promise<MessageOnly> {
+  async register(body: RegisterDto): Promise<DataMessage<unknown>> {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
       queryRunner = await this._queryRunnerExec.getRunner();
 
       const existingUser = await this._userRepo.find(body.email);
-
       if (existingUser) throw new ApplicationException('Email already exist');
 
       const { user, emailVerification } =
         await this._addUserAndEmailVerification(queryRunner, body);
+
+      user.accountStatus = AccountStatus.PENDING_PAYMENT;
+      await queryRunner.manager.save(user);
+
+      await this._walletRepo.add(queryRunner, { balance: 0 }, user);
+
+      const registrationFeeGhs = 1;
+      const paystackSession =
+        await this._paymentService.initializeTransactionForRegistration(
+          user.email,
+          registrationFeeGhs,
+          user.id,
+        );
 
       await this._emailVerificationMailer.sendMail({
         email: user.email,
@@ -81,9 +99,18 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      return { message: 'Please check your email to verify ' };
+      return {
+        message:
+          'Registration initiated. Please complete payment to activate your account.',
+        data: {
+          userId: user.id,
+          accountStatus: user.accountStatus,
+          authorizationUrl: paystackSession.data.authorization_url,
+          reference: paystackSession.data.reference,
+        },
+      };
     } catch (error) {
-      await this._queryRunnerExec.rollback(queryRunner);
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
 
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
@@ -317,6 +344,23 @@ export class AuthService {
         //   userAgent: req.headers['user-agent'],
         // });
         throw new ApplicationException('Invalid email and or password');
+      }
+
+      if (user.accountStatus === AccountStatus.PENDING_PAYMENT) {
+        // Generate a fresh payment URL for them if they lost the original one
+        const registrationFeeGhs = 1;
+        const paystackSession =
+          await this._paymentService.initializeTransactionForRegistration(
+            user.email,
+            registrationFeeGhs,
+            user.id,
+          );
+
+        throw new BadRequestException({
+          message: 'Your registration payment is incomplete.',
+          accountStatus: user.accountStatus,
+          authorizationUrl: paystackSession.data.authorization_url,
+        });
       }
 
       queryRunner = await this._queryRunnerExec.getRunner();
