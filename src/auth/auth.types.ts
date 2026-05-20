@@ -1,4 +1,4 @@
-import { Data } from 'src/lib/mailer/types.mailer';
+import { Data } from '../lib/mailer/types.mailer';
 import { RegisterDto } from './dto/register.dto';
 
 export enum Role {
@@ -19,7 +19,6 @@ export type OAuthProfile = {
   fullName: string;
   imageUrl?: string;
   provider: AuthProvider;
-  role?: Role;
 };
 
 export enum AccountStatus {
@@ -31,9 +30,10 @@ export enum AccountStatus {
 }
 
 export type CreateUserType = {
-  role: Role;
   provider?: AuthProvider;
   providerId?: string;
+  role?: Role;
+  fullName?: string;
 } & Partial<Pick<RegisterDto, 'password'>> &
   Omit<RegisterDto, 'confirmPassword' | 'password'>;
 

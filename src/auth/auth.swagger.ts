@@ -1,4 +1,4 @@
-import { swaggerServerErrorResponse } from 'src/lib/utils/swagger-error-response.utils';
+import { swaggerServerErrorResponse } from '../lib/utils/swagger-error-response.utils';
 
 export const swaggerRegisterResponse = {
   summary: 'This endpoint is only to be used on the register page',
