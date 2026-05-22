@@ -1,15 +1,23 @@
-<p>Hi <%= name %>,</p>
+<div style="font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f3f4f6; padding: 40px 20px; color: #1f2937; line-height: 1.6;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+    <div style="background-color: #0f172a; padding: 30px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 1px;">INFINITY DATA MALL</h1>
+    </div>
+    <div style="padding: 40px 30px;">
+      <h2 style="margin-top: 0; color: #111827; font-size: 20px;">Welcome aboard!</h2>
+      <p>Hi <%= name %>,</p>
+      <p>This is just a quick note to confirm that your email address has been successfully verified.</p>
+      <p>You now have full access to your account and can start browsing the platform. Log in anytime to access your dashboard:</p>
+      
+      <div style="text-align: center; margin: 35px 0;">
+        <a href="<%= frontendUrl %>/auth/login" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px;">Go to Dashboard</a>
+      </div>
 
-<p>
-  This is just a quick note to confirm that your email address has been
-  successfully verified.
-</p>
-
-<p>
-  You now have full access to your account. You can log in anytime at
-  <a href="<%= frontendUrl %>/login" target="_blank">growthmind.com</a>.
-</p>
-
-<p>Thanks for joining us!</p>
-
-<p>The GROWTHMIND Team</p>
+      <p>Thanks for joining us! We're excited to have you on the platform.</p>
+      <p style="margin-bottom: 0; margin-top: 30px;">Best regards,<br><strong>The Infinity Data Mall Team</strong></p>
+    </div>
+    <div style="background-color: #f8fafc; padding: 20px; text-align: center; font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0;">
+      &copy; <%= new Date().getFullYear() %> Infinity Data Mall. All rights reserved.
+    </div>
+  </div>
+</div>
