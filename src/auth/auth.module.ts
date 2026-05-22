@@ -9,6 +9,7 @@ import { ConfirmationMailer } from './mailer/confirmation.mailer';
 import { EmailVerificationMailer } from './mailer/email-verification.mailer';
 import { EmailVerificationRepository } from './repositories/email-verification.repository';
 import { RequestEmailResetMailer } from './mailer/request-email-reset.mailer';
+import { MfaMailer } from './mailer/mfa.mailer';
 import { PasswordResetRepository } from './repositories/password-reset.repository';
 import { ResetPasswordMailer } from './mailer/reset-password.mailer';
 import { User } from './entities/user.entity';
@@ -18,10 +19,17 @@ import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { PaymentModule } from '../payment/payment.module';
+import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
+import { MfaVerification } from './entities/mfa-verification.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, EmailVerification, PasswordReset]),
+    TypeOrmModule.forFeature([
+      User,
+      EmailVerification,
+      PasswordReset,
+      MfaVerification,
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     forwardRef(() => PaymentModule),
   ],
@@ -33,9 +41,11 @@ import { PaymentModule } from '../payment/payment.module';
     ResetPasswordMailer,
     EmailVerificationMailer,
     RequestEmailResetMailer,
+    MfaMailer,
     UserRepository,
     PasswordResetRepository,
     EmailVerificationRepository,
+    MfaVerificationRepository,
     GoogleStrategy,
     GoogleOAuthGuard,
   ],
