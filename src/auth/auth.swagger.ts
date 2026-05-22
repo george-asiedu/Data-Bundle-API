@@ -67,6 +67,54 @@ export const swaggerVerifyEmailResponse = {
   },
 };
 
+export const swaggerVerifyMfaResponse = {
+  summary:
+    'This endpoint is to be used after login to verify the 6-digit MFA code',
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: {
+            example: {
+              message: 'MFA verification successful, you are now logged in',
+              data: {
+                user: {
+                  id: 'CR1001',
+                  fullName: null,
+                  email: '<EMAIL>',
+                  role: 'CONTENT_CREATOR',
+                  accountStatus: 'VERIFIED',
+                  imageUrl: null,
+                },
+                token: {
+                  accessToken: 'your-access-token',
+                  refreshToken: 'your-refresh-token',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    400: {
+      description: 'Error',
+      content: {
+        'application/json': {
+          schema: {
+            example: {
+              message: 'Invalid MFA session',
+              error: 'Bad Request',
+              statusCode: 400,
+            },
+          },
+        },
+      },
+    },
+    ...swaggerServerErrorResponse,
+  },
+};
+
 export const swaggerCheckEmailResponse = {
   summary:
     'This endpoint is only to be used only when registering to verify if the provided email in the input field is not taken',
