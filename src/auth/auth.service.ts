@@ -25,7 +25,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfirmationMailer } from './mailer/confirmation.mailer';
 import { ResetPasswordMailer } from './mailer/reset-password.mailer';
 import { LoginDto } from './dto/login.dto';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { ApplicationException } from '../lib/exception/app.exception';
 import { DataMessage, MessageOnly } from '../lib/utils/types.utils';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
@@ -37,7 +37,6 @@ import { WalletRepository } from '../payment/repositories/wallet.repository';
 export class AuthService {
   private readonly _logger = new Logger(AuthService.name);
   private readonly _secretKey: string;
-  private readonly _frontendUrl: string;
   private readonly _oauthSuccessRedirect: string;
   private readonly _oauthFailureRedirect: string;
 
@@ -57,7 +56,6 @@ export class AuthService {
     private readonly _walletRepo: WalletRepository,
   ) {
     this._secretKey = this._configService.get('SECRET_KEY') as string;
-    this._frontendUrl = this._configService.get('FRONTEND_URL') as string;
     this._oauthSuccessRedirect = this._configService.get<string>(
       'OAUTH_SUCCESS_REDIRECT',
     ) as string;
@@ -80,16 +78,6 @@ export class AuthService {
 
       await this._walletRepo.add(queryRunner, { balance: 0 }, user);
 
-      const registrationFeeGhs = 1;
-      const paystackSession =
-        await this._paymentService.initializeTransactionForRegistration(
-          {
-            email: user.email,
-            amount: registrationFeeGhs,
-          },
-          user.id,
-        );
-
       await this._emailVerificationMailer.sendMail({
         email: user.email,
         name: user.fullName ?? 'User',
@@ -100,12 +88,10 @@ export class AuthService {
 
       return {
         message:
-          'Registration initiated. Please complete payment to activate your account.',
+          'Registration successful. Please check your email to verify your account.',
         data: {
           userId: user.id,
           accountStatus: user.accountStatus,
-          authorizationUrl: paystackSession.data.authorization_url,
-          reference: paystackSession.data.reference,
         },
       };
     } catch (error) {
@@ -147,14 +133,16 @@ export class AuthService {
     return await hash(password, salt);
   }
 
-  async verifyEmail(body: VerifyEmailDto): Promise<MessageOnly> {
+  async verifyEmail(
+    body: VerifyEmailDto,
+    clientOrigin: string,
+  ): Promise<DataMessage<unknown>> {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
       queryRunner = await this._queryRunnerExec.getRunner();
 
       const existingUser = await this._userRepo.find(body.email);
-
       const verification = await this._emailVerificationRepo.find(
         body.email,
         body.token,
@@ -164,32 +152,50 @@ export class AuthService {
         !verification ||
         !existingUser ||
         (existingUser && existingUser.accountStatus === AccountStatus.ACTIVE)
-      )
+      ) {
         throw new ApplicationException('Token is invalid');
+      }
 
       await this._emailVerificationRepo.destroy(queryRunner, verification);
 
       await this._userRepo.update(queryRunner, existingUser, {
-        accountStatus: AccountStatus.ACTIVE,
+        accountStatus: AccountStatus.PENDING_PAYMENT,
       });
+
+      const registrationFeeGhs = 1;
+      const paystackSession =
+        await this._paymentService.initializeTransactionForRegistration(
+          {
+            email: existingUser.email,
+            amount: registrationFeeGhs,
+          },
+          existingUser.id,
+        );
 
       await this._confirmationMailer.sendMail({
         email: existingUser.email,
         name: existingUser.fullName ?? 'User',
-        frontendUrl: this._configService.get('FRONTEND_URL') as string,
+        frontendUrl: clientOrigin,
       });
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      return { message: 'Email is verified' };
+      return {
+        message:
+          'Email successfully verified. Please complete payment to activate your account.',
+        data: {
+          accountStatus: AccountStatus.PENDING_PAYMENT,
+          authorizationUrl: paystackSession.data.authorization_url,
+          reference: paystackSession.data.reference,
+        },
+      };
     } catch (error) {
-      await this._queryRunnerExec.rollback(queryRunner);
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
 
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
 
       this._logger.error((error as Error).message);
-
       throw new InternalServerErrorException('Something went wrong');
     }
   }
@@ -212,7 +218,10 @@ export class AuthService {
     }
   }
 
-  async requestPasswordReset(email: string): Promise<MessageOnly> {
+  async requestPasswordReset(
+    email: string,
+    clientOrigin: string,
+  ): Promise<MessageOnly> {
     const message = 'Please check your email and password';
     let queryRunner: QueryRunner | undefined = undefined;
 
@@ -243,7 +252,7 @@ export class AuthService {
         email,
         name: existingUserWithEmail.fullName ?? 'User',
         token: encryptedToken,
-        frontendUrl: this._configService.get('FRONTEND_URL') as string,
+        frontendUrl: clientOrigin,
       });
 
       await this._queryRunnerExec.commit(queryRunner);
@@ -460,10 +469,7 @@ export class AuthService {
     }
   }
 
-  async handleOAuthLogin(
-    profile: OAuthProfile,
-    _req: Request,
-  ): Promise<{ redirectUrl: string }> {
+  async handleOAuthLogin(profile: OAuthProfile, req: Request, res: Response) {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
@@ -490,11 +496,13 @@ export class AuthService {
       const encryptedAccess = this._encryptionService.encrypt(accessToken);
       const encryptedRefresh = this._encryptionService.encrypt(refreshToken);
 
-      const frontendUrl = this._frontendUrl;
+      const frontendUrl = req.cookies['oauth_redirect'];
+      res.clearCookie('oauth_redirect');
+
       const successPath = this._oauthSuccessRedirect;
       const redirectUrl = `${frontendUrl}${successPath}?access_token=${encodeURIComponent(encryptedAccess)}&refresh_token=${encodeURIComponent(encryptedRefresh)}&is_new=${isNew}`;
 
-      return { redirectUrl };
+      return res.redirect(redirectUrl);
     } catch (error: unknown) {
       await this._queryRunnerExec.rollback(queryRunner);
 
@@ -502,9 +510,9 @@ export class AuthService {
         `OAuth login failed for ${profile.provider}: ${(error as Error).message}`,
       );
 
-      const frontendUrl = this._frontendUrl;
+      const frontendUrl = req.cookies['oauth_redirect'];
       const failurePath = this._oauthFailureRedirect;
-      return { redirectUrl: `${frontendUrl}${failurePath}` };
+      return res.redirect(`${frontendUrl}${failurePath}`);
     }
   }
 }
