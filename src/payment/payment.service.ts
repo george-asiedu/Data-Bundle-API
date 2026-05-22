@@ -58,11 +58,15 @@ export class PaymentService {
     }
 
     try {
+      const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
+      const callbackUrl = `${frontendUrl}/payment-success`;
+
       const response = await axios.post(
         `${this._paystackBaseUrl}/transaction/initialize`,
         {
           email: payload.email,
           amount: payload.amount * 100,
+          callback_url: callbackUrl,
           metadata: { userId, purpose: TransactionPurpose.TOP_UP },
         },
         { headers: this.headers },
@@ -77,14 +81,23 @@ export class PaymentService {
   }
 
   /**
-   * Verifies a payment transaction using its reference
+   * Verifies a payment transaction using its reference and processes account activation
+   * if it is a registration fee payment.
    * @param reference - The transaction reference to verify
-   * @returns A promise resolving to the transaction verification response
+   * @param userId - The ID of the authenticated user requesting verification
    */
   async verifyTransaction(reference: string, userId: string) {
     if (!userId) {
       throw new BadRequestException('User ID is required');
     }
+
+    // Idempotency check: Don't process if the transaction log already exists
+    const existingTx = await this._transactionRepo.findByPaystackRef(reference);
+    if (existingTx) {
+      return { message: 'Transaction already processed successfully.' };
+    }
+
+    let queryRunner: QueryRunner | undefined = undefined;
 
     try {
       const response = await axios.get(
@@ -92,18 +105,82 @@ export class PaymentService {
         { headers: this.headers },
       );
 
-      const { status } = response.data.data;
+      const paystackData = response.data.data;
+      const status = paystackData.status;
+      const amountInGhs = paystackData.amount / 100;
+      const purpose = paystackData.metadata?.purpose;
 
       if (status !== 'success') {
         throw new BadRequestException('Transaction was not successful');
       }
 
-      return response.data;
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      const wallet = await this._walletRepo.findByUserId(userId);
+      if (!wallet) throw new ApplicationException('Wallet not found');
+
+      const user = await this._userRepo.find(userId);
+      if (!user) throw new ApplicationException('User not found');
+
+      if (purpose === TransactionPurpose.REGISTRATION_FEE) {
+        user.accountStatus = AccountStatus.ACTIVE;
+        await queryRunner.manager.save(user);
+
+        await this._transactionRepo.add(
+          queryRunner,
+          {
+            type: TransactionType.CREDIT,
+            purpose: TransactionPurpose.REGISTRATION_FEE,
+            amount: amountInGhs,
+            balanceAfter: Number(wallet.balance),
+            reference: `REG-${Date.now()}`,
+            paystackRef: reference,
+          },
+          user,
+          wallet,
+        );
+
+        this._logger.log(
+          `Account successfully activated for user ${userId} via registration payment.`,
+        );
+      } else {
+        const balanceAfter = Number(wallet.balance) + amountInGhs;
+
+        await this._transactionRepo.add(
+          queryRunner,
+          {
+            type: TransactionType.CREDIT,
+            purpose: TransactionPurpose.TOP_UP,
+            amount: amountInGhs,
+            balanceAfter: balanceAfter,
+            reference: `TOP-UP-${Date.now()}`,
+            paystackRef: reference,
+          },
+          user,
+          wallet,
+        );
+
+        await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
+      }
+
+      await this._queryRunnerExec.commit(queryRunner);
+
+      return {
+        message: 'Transaction verified and processed successfully',
+        accountStatus: user.accountStatus,
+      };
     } catch (error: unknown) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
 
-      this._logger.error((error as Error).message);
+      this._logger.error(
+        `Verification processing failed: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Something went wrong during payment verification',
+      );
     }
   }
 
@@ -119,11 +196,15 @@ export class PaymentService {
     userId: string,
   ) {
     try {
+      const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
+      const callbackUrl = `${frontendUrl}/payment-success`;
+
       const response = await axios.post(
         `${this._paystackBaseUrl}/transaction/initialize`,
         {
           email: payload.email,
           amount: payload.amount * 100,
+          callback_url: callbackUrl,
           metadata: {
             userId,
             purpose: TransactionPurpose.REGISTRATION_FEE,
@@ -137,13 +218,12 @@ export class PaymentService {
         `Failed to initialize registration payment: ${(error as Error).message}`,
       );
       throw new InternalServerErrorException(
-        'Payment gateway communication failed',
+        'Payment gateway link generation failed',
       );
     }
   }
 
   async processWebhookEvent(payload: any) {
-    // Only process successful charges for top-ups
     if (payload.event !== 'charge.success') return;
 
     const data = payload.data;
@@ -152,12 +232,7 @@ export class PaymentService {
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose;
 
-    if (!userId) {
-      this._logger.error(
-        `Webhook missing userId in metadata for ref: ${paystackRef}`,
-      );
-      return;
-    }
+    if (!userId || !purpose) return;
 
     // IIdempotency check: Don't process duplicate hooks
     const existingTx = await this._transactionRepo.findByPaystackRef(
