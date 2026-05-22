@@ -30,6 +30,7 @@ import {
   swaggerLoginResponse,
   swaggerGetAuthenticatedUserResponse,
   swaggerRefreshAccessTokenResponse,
+  swaggerVerifyMfaResponse,
 } from './auth.swagger';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { EmailDto } from './dto/email.dto';
@@ -39,6 +40,7 @@ import { AuthGuard } from './guards/auth.guard';
 import { Request, Response } from 'express';
 import { OAuthProfile } from './auth.types';
 import { GoogleOAuthGuard } from './guards/google-oauth.guard';
+import { VerifyMfaDto } from './dto/verify-mfa.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -156,8 +158,23 @@ export class AuthController {
   @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  login(@Body(ValidationPipe) body: LoginDto, @Req() req: Request) {
-    return this._authService.login(body, req);
+  login(@Body(ValidationPipe) body: LoginDto) {
+    return this._authService.login(body);
+  }
+
+  /**
+   * Verify the 6-digit MFA code sent to email
+   * @param body
+   * @returns
+   */
+  @ApiOperation(swaggerVerifyMfaResponse)
+  @HttpCode(HttpStatus.OK)
+  @Post('verify-mfa')
+  verifyMfa(@Body(ValidationPipe) body: VerifyMfaDto) {
+    if (!body.mfaToken || !body.code) {
+      throw new BadRequestException('Token and code are required');
+    }
+    return this._authService.verifyMfa(body);
   }
 
   /**
