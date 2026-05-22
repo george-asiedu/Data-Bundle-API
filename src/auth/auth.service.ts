@@ -32,6 +32,9 @@ import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { TokenGenerator } from '../shared/services/token-generator.service';
 import { PaymentService } from '../payment/payment.service';
 import { WalletRepository } from '../payment/repositories/wallet.repository';
+import { MfaMailer } from './mailer/mfa.mailer';
+import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
+import { VerifyMfaDto } from './dto/verify-mfa.dto';
 
 @Injectable()
 export class AuthService {
@@ -54,6 +57,8 @@ export class AuthService {
     private readonly _emailVerificationRepo: EmailVerificationRepository,
     private readonly _paymentService: PaymentService,
     private readonly _walletRepo: WalletRepository,
+    private readonly _mfaMailer: MfaMailer,
+    private readonly _mfaVerificationRepo: MfaVerificationRepository,
   ) {
     this._secretKey = this._configService.get('SECRET_KEY') as string;
     this._oauthSuccessRedirect = this._configService.get<string>(
@@ -337,7 +342,7 @@ export class AuthService {
     }
   }
 
-  async login(body: LoginDto, _req: Request) {
+  async login(body: LoginDto) {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
@@ -373,9 +378,92 @@ export class AuthService {
       }
 
       queryRunner = await this._queryRunnerExec.getRunner();
+
+      const existingMfaCodes = await this._mfaVerificationRepo.findMany(
+        user.email,
+      );
+      await this._mfaVerificationRepo.destroyMany(
+        queryRunner,
+        existingMfaCodes,
+      );
+
+      const mfaCode = Math.floor(100000 + Math.random() * 900000).toString();
+      await this._mfaVerificationRepo.add(queryRunner, {
+        email: user.email,
+        code: mfaCode,
+      });
+
+      await this._mfaMailer.sendMail({
+        email: user.email,
+        name: user.fullName ?? 'User',
+        token: mfaCode,
+      });
+
+      await this._queryRunnerExec.commit(queryRunner);
+
+      const mfaToken = sign(
+        { sub: user.id, token: 'mfa-tk' },
+        this._secretKey,
+        { algorithm: 'HS256', expiresIn: '5m' },
+      );
+
+      return {
+        message:
+          'Credentials verified. Please enter the 6-digit code sent to your email.',
+        data: {
+          mfaToken: this._encryptionService.encrypt(mfaToken),
+        },
+      };
+    } catch (error) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
+      if (error instanceof ApplicationException)
+        throw new BadRequestException(error.message);
+
+      this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Something went wrong');
+    }
+  }
+
+  async verifyMfa(body: VerifyMfaDto) {
+    let queryRunner: QueryRunner | undefined = undefined;
+
+    try {
+      const decryptedToken = this._encryptionService.decrypt(body.mfaToken);
+      const result = verify(decryptedToken, this._secretKey) as unknown as {
+        sub: string;
+        token: string;
+      };
+
+      if (result.token !== 'mfa-tk') {
+        throw new ApplicationException('Invalid MFA session');
+      }
+
+      const user = await this._userRepo.find(result.sub);
+      if (!user) throw new ApplicationException('User not found');
+
+      const mfaVerification = await this._mfaVerificationRepo.find(
+        user.email,
+        body.code,
+      );
+
+      const now = new Date();
+      const codeAgeInMinutes = mfaVerification
+        ? (now.getTime() - new Date(mfaVerification.createdAt).getTime()) /
+          60000
+        : Infinity;
+
+      if (!mfaVerification || codeAgeInMinutes > 5) {
+        throw new ApplicationException('Code is invalid or has expired');
+      }
+
+      queryRunner = await this._queryRunnerExec.getRunner();
+      await this._mfaVerificationRepo.destroy(queryRunner, mfaVerification);
+
       await this._userRepo.update(queryRunner, user, {
         lastLoginAt: new Date(),
       });
+
       await this._queryRunnerExec.commit(queryRunner);
 
       const accessToken = this._generateAccessToken(user.id);
@@ -403,7 +491,7 @@ export class AuthService {
         throw new BadRequestException(error.message);
 
       this._logger.error((error as Error).message);
-      throw new InternalServerErrorException('Something went wrong');
+      throw new InternalServerErrorException('Verification failed');
     }
   }
 
