@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Headers,
   ClassSerializerInterceptor,
   Controller,
   Get,
@@ -66,8 +67,17 @@ export class AuthController {
   @ApiOperation(swaggerVerifyEmailResponse)
   @HttpCode(HttpStatus.OK)
   @Post('verify-email')
-  verifyEmail(@Body(ValidationPipe) body: VerifyEmailDto) {
-    return this._authService.verifyEmail(body);
+  verifyEmail(
+    @Body(ValidationPipe) body: VerifyEmailDto,
+    @Headers('origin') origin: string,
+  ) {
+    const clientOrigin = origin;
+    if (!clientOrigin) {
+      throw new BadRequestException(
+        'Origin header or frontend URL must be provided',
+      );
+    }
+    return this._authService.verifyEmail(body, clientOrigin);
   }
 
   /**
@@ -90,8 +100,18 @@ export class AuthController {
   @ApiOperation(swaggerRequestPasswordReset)
   @HttpCode(HttpStatus.OK)
   @Post('request-password-reset')
-  requestPasswordReset(@Body(ValidationPipe) body: EmailDto) {
-    return this._authService.requestPasswordReset(body.email);
+  requestPasswordReset(
+    @Body(ValidationPipe) body: EmailDto,
+    @Headers('origin') origin: string,
+  ) {
+    const clientOrigin = origin;
+    if (!clientOrigin) {
+      throw new BadRequestException(
+        'Origin header or frontend URL must be provided',
+      );
+    }
+
+    return this._authService.requestPasswordReset(body.email, clientOrigin);
   }
 
   /**
@@ -151,7 +171,17 @@ export class AuthController {
   })
   @Get('google')
   @UseGuards(GoogleOAuthGuard)
-  googleAuth() {}
+  googleAuth(
+    @Req() _req: Request,
+    @Res() res: Response,
+    @Query('redirect') redirectUrl: string,
+  ) {
+    const target = redirectUrl;
+    res.cookie('oauth_redirect', target, {
+      httpOnly: true,
+      maxAge: 1000 * 60 * 5,
+    });
+  }
 
   /**
    * redirect user to Google consent screen
@@ -168,11 +198,7 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const profile = req.user as OAuthProfile;
-    const { redirectUrl } = await this._authService.handleOAuthLogin(
-      profile,
-      req,
-    );
-    return res.redirect(redirectUrl);
+    return await this._authService.handleOAuthLogin(profile, req, res);
   }
 
   /**
