@@ -7,10 +7,18 @@ import { AuthProvider, OAuthProfile } from '../auth.types';
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(configService: ConfigService) {
+    const nodeEnv = configService.get<string>('NODE_ENV') as string;
+    const callbackLocal = configService.get<string>(
+      'GOOGLE_CALLBACK_LOCAL_URL',
+    ) as string;
+    const callbackServer = configService.get<string>(
+      'GOOGLE_CALLBACK_SERVER_URL',
+    ) as string;
+
     super({
       clientID: configService.get<string>('GOOGLE_CLIENT_ID') as string,
       clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET') as string,
-      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL') as string,
+      callbackURL: nodeEnv === 'development' ? callbackLocal : callbackServer,
       scope: ['email', 'profile'],
     });
   }
