@@ -40,7 +40,7 @@ export class User {
     name: 'account_status',
     type: 'enum',
     enum: AccountStatus,
-    default: AccountStatus.PENDING_PAYMENT,
+    default: AccountStatus.PENDING_VERIFICATION,
   })
   accountStatus?: AccountStatus;
 
