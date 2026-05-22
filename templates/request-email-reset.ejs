@@ -1,18 +1,24 @@
-<p>Hi <%= name %>,</p>
-
-<p>Forgot your password? It happens to the best of us!</p>
-
-<p>
-  Click the button below to choose a new one and get back into your account:
-</p>
-
-<a href="<%= frontendUrl %>/reset-password?token=<%= token %>" target="_blank"
-  >Set a New Password</a
->
-
-<p>For your security, this link is only valid for 30 minutes.</p>
-
-<p>
-  Cheers, <br />
-  The GROWTHMIND Team
-</p>
+<div style="font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f3f4f6; padding: 40px 20px; color: #1f2937; line-height: 1.6;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+    <div style="background-color: #0f172a; padding: 30px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 1px;">INFINITY DATA MALL</h1>
+    </div>
+    <div style="padding: 40px 30px;">
+      <h2 style="margin-top: 0; color: #111827; font-size: 20px;">Reset your password</h2>
+      <p>Hi <%= name %>,</p>
+      <p>Forgot your password? It happens to the best of us! You recently requested to reset the password for your account.</p>
+      <p>Click the button below to choose a new one and get back to your dashboard:</p>
+      
+      <div style="text-align: center; margin: 35px 0;">
+        <a href="<%= frontendUrl %>/auth/reset-password?token=<%= token %>" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px;">Set a New Password</a>
+      </div>
+      
+      <p style="font-size: 14px; color: #6b7280;">For your security, this link is only valid for 30 minutes.</p>
+      <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+      <p style="margin-bottom: 0; margin-top: 30px;">Cheers,<br><strong>The Infinity Data Mall Team</strong></p>
+    </div>
+    <div style="background-color: #f8fafc; padding: 20px; text-align: center; font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0;">
+      &copy; <%= new Date().getFullYear() %> Infinity Data Mall. All rights reserved.
+    </div>
+  </div>
+</div>
