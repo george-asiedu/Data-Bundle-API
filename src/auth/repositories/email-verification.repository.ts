@@ -34,4 +34,12 @@ export class EmailVerificationRepository {
       .setParameters({ email, token })
       .getOne();
   }
+
+  async findByEmail(email: string): Promise<EmailVerification | null> {
+    return this._dataSource
+      .getRepository(EmailVerification)
+      .createQueryBuilder('email_verification')
+      .where('email=:email', { email })
+      .getOne();
+  }
 }
