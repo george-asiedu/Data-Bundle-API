@@ -37,7 +37,8 @@ export class PaymentService {
     ) as string;
     this._paystackBaseUrl = this._configService.get<string>(
       'PAYSTACK_BASE_URL',
-    ) as string;
+      'https://paystack.co',
+    );
   }
 
   private get headers() {
@@ -213,9 +214,11 @@ export class PaymentService {
         { headers: this.headers },
       );
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
+      const gatewayErrorMessage =
+        error.response?.data?.message || error.message;
       this._logger.error(
-        `Failed to initialize registration payment: ${(error as Error).message}`,
+        `Failed to initialize registration payment: ${gatewayErrorMessage}`,
       );
       throw new InternalServerErrorException(
         'Payment gateway link generation failed',
