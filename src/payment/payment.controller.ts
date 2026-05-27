@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
+    BadRequestException,
   Body,
   Controller,
   Get,
@@ -72,11 +73,10 @@ export class PaymentController {
   @ApiOperation({ summary: 'Verify a payment transaction' })
   @HttpCode(HttpStatus.OK)
   @Get('verify/:reference')
-  async verifyPayment(
-    @Param('reference') reference: string,
-    @CurrentUser() user: User,
-  ) {
-    return this._paymentService.verifyTransaction(reference, user.id);
+  async verifyPayment(@Param('reference') reference: string) {
+    if (!reference)
+      throw new BadRequestException('Transaction reference is required');
+    return this._paymentService.verifyTransaction(reference);
   }
 
   /**

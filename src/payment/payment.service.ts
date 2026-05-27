@@ -85,13 +85,8 @@ export class PaymentService {
    * Verifies a payment transaction using its reference and processes account activation
    * if it is a registration fee payment.
    * @param reference - The transaction reference to verify
-   * @param userId - The ID of the authenticated user requesting verification
    */
-  async verifyTransaction(reference: string, userId: string) {
-    if (!userId) {
-      throw new BadRequestException('User ID is required');
-    }
-
+  async verifyTransaction(reference: string) {
     // Idempotency check: Don't process if the transaction log already exists
     const existingTx = await this._transactionRepo.findByPaystackRef(reference);
     if (existingTx) {
@@ -110,6 +105,13 @@ export class PaymentService {
       const status = paystackData.status;
       const amountInGhs = paystackData.amount / 100;
       const purpose = paystackData.metadata?.purpose;
+
+      const userId = paystackData.metadata?.userId as string;
+      if (!userId) {
+        throw new BadRequestException(
+          'Transaction metadata is missing user context',
+        );
+      }
 
       if (status !== 'success') {
         throw new BadRequestException('Transaction was not successful');
