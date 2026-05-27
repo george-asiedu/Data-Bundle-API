@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
-    BadRequestException,
+  BadRequestException,
   Body,
   Controller,
   Get,
