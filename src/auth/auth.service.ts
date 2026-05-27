@@ -35,6 +35,7 @@ import { WalletRepository } from '../payment/repositories/wallet.repository';
 import { MfaMailer } from './mailer/mfa.mailer';
 import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
+import { EmailDto } from './dto/email.dto';
 
 @Injectable()
 export class AuthService {
@@ -200,8 +201,74 @@ export class AuthService {
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
 
-      this._logger.error((error as Error).message);
+      this._logger.error(
+        `Verification Crash Trace: ${(error as Error).stack || (error as Error).message}`,
+      );
       throw new InternalServerErrorException('Something went wrong');
+    }
+  }
+
+  async resendVerificationEmail(body: EmailDto): Promise<MessageOnly> {
+    let queryRunner: QueryRunner | undefined = undefined;
+
+    try {
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      const existingUser = await this._userRepo.find(body.email);
+      if (!existingUser) {
+        throw new ApplicationException(
+          'No account found associated with this email address.',
+        );
+      }
+
+      if (existingUser.accountStatus === AccountStatus.ACTIVE) {
+        throw new ApplicationException(
+          'This account has already been verified successfully.',
+        );
+      }
+
+      const existingVerification =
+        await this._emailVerificationRepo.findByEmail(body.email);
+
+      if (existingVerification) {
+        await this._emailVerificationRepo.destroy(
+          queryRunner,
+          existingVerification,
+        );
+      }
+
+      const newVerification = await this._emailVerificationRepo.add(
+        queryRunner,
+        {
+          email: existingUser.email,
+          token: this._tokenGenerator.generate(12),
+        },
+      );
+
+      await this._emailVerificationMailer.sendMail({
+        email: existingUser.email,
+        name: existingUser.fullName ?? 'User',
+        token: newVerification.token,
+      });
+
+      await this._queryRunnerExec.commit(queryRunner);
+
+      return {
+        message:
+          'A new verification email has been sent. Please check your inbox.',
+      };
+    } catch (error) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
+      if (error instanceof ApplicationException)
+        throw new BadRequestException(error.message);
+
+      this._logger.error(
+        `Resend Verification System Failure: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'System failed to process token transmission.',
+      );
     }
   }
 
