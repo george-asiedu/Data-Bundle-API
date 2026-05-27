@@ -31,6 +31,7 @@ import {
   swaggerGetAuthenticatedUserResponse,
   swaggerRefreshAccessTokenResponse,
   swaggerVerifyMfaResponse,
+  swaggerResendVerificationEmailResponse,
 } from './auth.swagger';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { EmailDto } from './dto/email.dto';
@@ -80,6 +81,18 @@ export class AuthController {
       );
     }
     return this._authService.verifyEmail(body, clientOrigin);
+  }
+
+  /**
+   * resend the email verification link if the user did not receive the first email or the token has expired
+   * @param {VerifyEmailDto} body
+   * @returns
+   */
+  @ApiOperation(swaggerResendVerificationEmailResponse)
+  @HttpCode(HttpStatus.OK)
+  @Post('resend-verification')
+  resendVerification(@Body(ValidationPipe) body: EmailDto) {
+    return this._authService.resendVerificationEmail(body);
   }
 
   /**

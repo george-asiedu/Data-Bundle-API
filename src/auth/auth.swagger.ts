@@ -67,6 +67,27 @@ export const swaggerVerifyEmailResponse = {
   },
 };
 
+export const swaggerResendVerificationEmailResponse = {
+  summary:
+    'This endpoint is to be used on the register page if the user did not receive the verification email or the token has expired to resend the verification email',
+  responses: {
+    200: {
+      description: 'OK',
+      content: {
+        'application/json': {
+          schema: {
+            example: {
+              message:
+                'A new verification email has been sent. Please check your inbox.',
+            },
+          },
+        },
+      },
+    },
+    ...swaggerServerErrorResponse,
+  },
+};
+
 export const swaggerVerifyMfaResponse = {
   summary:
     'This endpoint is to be used after login to verify the 6-digit MFA code',
