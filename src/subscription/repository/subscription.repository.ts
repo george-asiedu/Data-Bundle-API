@@ -26,14 +26,14 @@ export class SubscriptionsRepository {
 
   async add(
     queryRunner: QueryRunner,
-    data: Subscription,
+    data: Partial<Subscription>,
     user: User,
   ): Promise<Subscription> {
     const subscriptions = new Subscription();
     subscriptions.id = await this._getNextId(queryRunner);
-    subscriptions.status = data.status;
-    subscriptions.currentPeriodStart = data.currentPeriodStart;
-    subscriptions.currentPeriodEnd = data.currentPeriodEnd;
+    subscriptions.status = data.status || SubscriptionStatus.ACTIVE;
+    subscriptions.currentPeriodStart = data.currentPeriodStart || new Date();
+    subscriptions.currentPeriodEnd = data.currentPeriodEnd!;
     subscriptions.user = user;
 
     return await queryRunner.manager.save(subscriptions);
