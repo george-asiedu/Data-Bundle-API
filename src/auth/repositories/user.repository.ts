@@ -51,8 +51,8 @@ export class UserRepository {
 
   private _getInitials(role: Role): string {
     switch (role) {
-      case Role.ADMIN:
-        return 'AD';
+      case Role.SUPER_ADMIN:
+        return 'SA';
       case Role.AGENT:
         return 'AG';
       case Role.SUB_AGENT:
