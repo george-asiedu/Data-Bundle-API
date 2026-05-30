@@ -5,7 +5,7 @@ export enum Role {
   AGENT = 'AGENT',
   SUB_AGENT = 'SUB_AGENT',
   CUSTOMER = 'CUSTOMER',
-  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN',
 }
 
 export enum AuthProvider {
