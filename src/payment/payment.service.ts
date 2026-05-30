@@ -360,7 +360,7 @@ export class PaymentService {
     businessName: string,
     settlementBank: string,
     accountNumber: string,
-    platformPercentage: number = 0, // Set default platform cut here
+    platformPercentage: number,
   ) {
     try {
       const response = await axios.post(
