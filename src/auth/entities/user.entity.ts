@@ -97,6 +97,13 @@ export class User {
   @Column({ name: 'account_number', nullable: true })
   accountNumber?: string; // The number of their bank/MoMo account for settlements
 
+  @Column({
+    name: 'commission_percentage',
+    type: 'integer',
+    default: 10,
+  })
+  commissionPercentage: number;
+
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
 
