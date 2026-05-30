@@ -10,7 +10,9 @@ import {
   Logger,
   Param,
   Post,
+  Query,
   UseGuards,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,6 +27,10 @@ import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { CurrentUser } from '../shared/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
+import {
+  CompleteFinancialSetupDto,
+  VerifyBankDto,
+} from './dto/financial-setup.dto';
 
 @ApiTags('Payment')
 @Controller('payment')
@@ -77,6 +83,32 @@ export class PaymentController {
     if (!reference)
       throw new BadRequestException('Transaction reference is required');
     return this._paymentService.verifyTransaction(reference);
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify bank account or MoMo number' })
+  @HttpCode(HttpStatus.OK)
+  @Get('verify-bank')
+  async verifyBankAccount(@Query(ValidationPipe) query: VerifyBankDto) {
+    return this._paymentService.resolveAccountNumber(
+      query.accountNumber,
+      query.bankCode,
+    );
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Complete Agent financial onboarding and create subaccount',
+  })
+  @HttpCode(HttpStatus.OK)
+  @Post('complete-financial-setup')
+  async completeAgentFinancialSetup(
+    @Body(ValidationPipe) payload: CompleteFinancialSetupDto,
+    @CurrentUser() user: User,
+  ) {
+    return this._paymentService.completeAgentFinancialSetup(user.id, payload);
   }
 
   /**
