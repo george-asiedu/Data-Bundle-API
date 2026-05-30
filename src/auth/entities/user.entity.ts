@@ -81,12 +81,21 @@ export class User {
   @Exclude()
   mfaSecret?: string;
 
-  @Column({ name: 'api_key_hash', nullable: true })
+  @Column({ name: 'api_key', nullable: true })
   @Exclude()
-  apiKeyHash?: string;
+  apiKey?: string;
 
   @Column({ name: 'webhook_url', nullable: true })
   webhookUrl?: string;
+
+  @Column({ name: 'paystack_subaccount_code', nullable: true })
+  paystackSubaccountCode?: string; // Stores the Paystack split ID
+
+  @Column({ name: 'settlement_bank_account', nullable: true })
+  settlementBankAccount?: string; // The name of their bank/MoMo account for settlements
+
+  @Column({ name: 'account_number', nullable: true })
+  accountNumber?: string; // The number of their bank/MoMo account for settlements
 
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
