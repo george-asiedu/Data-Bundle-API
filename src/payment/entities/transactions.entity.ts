@@ -30,10 +30,10 @@ export class Transaction {
   @Column({ type: 'enum', enum: TransactionPurpose })
   purpose: TransactionPurpose;
 
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  @Column({ name: 'amount', type: 'integer' })
   amount: number;
 
-  @Column({ name: 'balance_after', type: 'decimal', precision: 12, scale: 2 })
+  @Column({ name: 'balance_after', type: 'integer' })
   balanceAfter: number;
 
   @Column({ unique: true })
