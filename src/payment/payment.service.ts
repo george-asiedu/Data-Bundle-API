@@ -18,6 +18,7 @@ import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { QueryRunner } from 'typeorm';
 import { UserRepository } from '../auth/repositories/user.repository';
 import { AccountStatus, Role } from '../auth/auth.types';
+import { CompleteFinancialSetupDto } from './dto/financial-setup.dto';
 
 @Injectable()
 export class PaymentService {
@@ -381,6 +382,65 @@ export class PaymentService {
       );
       throw new InternalServerErrorException(
         'Failed to setup financial profile with the payment gateway.',
+      );
+    }
+  }
+
+  /**
+   * Completes the financial onboarding for an Agent
+   */
+  async completeAgentFinancialSetup(
+    userId: string,
+    payload: CompleteFinancialSetupDto,
+  ) {
+    let queryRunner: QueryRunner | undefined = undefined;
+
+    try {
+      const user = await this._userRepo.find(userId);
+      if (!user) throw new ApplicationException('User not found');
+
+      if (user.paystackSubaccountCode) {
+        throw new ApplicationException('Financial profile already configured.');
+      }
+
+      // Verify the bank details first to prevent junk data
+      await this.resolveAccountNumber(payload.accountNumber, payload.bankCode);
+
+      // Create the Subaccount on Paystack (e.g., 10% platform fee)
+      const platformFeePercentage = 10;
+      const subaccountCode = await this.createSubaccount(
+        payload.businessName,
+        payload.bankCode,
+        payload.accountNumber,
+        platformFeePercentage,
+      );
+
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      user.paystackSubaccountCode = subaccountCode;
+      user.settlementBankAccount = payload.bankCode;
+      user.accountNumber = payload.accountNumber;
+
+      await queryRunner.manager.save(user);
+      await this._queryRunnerExec.commit(queryRunner);
+
+      this._logger.log(`Financial setup completed for Agent ${userId}`);
+
+      return {
+        message: 'Financial profile successfully created and linked.',
+        data: { subaccountCode },
+      };
+    } catch (error: unknown) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
+      if (error instanceof ApplicationException)
+        throw new BadRequestException(error.message);
+
+      this._logger.error(
+        `Financial setup failed for ${userId}: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'System failed to configure financial profile.',
       );
     }
   }
