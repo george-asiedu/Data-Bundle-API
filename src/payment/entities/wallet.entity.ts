@@ -24,8 +24,14 @@ export class Wallet {
   @OneToMany(() => Transaction, (transaction) => transaction.wallet)
   transactions: Array<Transaction>;
 
-  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0.0 })
+  @Column({ name: 'balance', type: 'integer', default: 0 })
   balance: number;
+
+  @Column({ name: 'low_balance_alert', type: 'integer', default: 0 })
+  lowBalanceAlert: number; // Agent can set a threshold for low balance alerts
+
+  @Column({ name: 'is_frozen', type: 'boolean', default: false })
+  isFrozen: boolean; // Admin can freeze a wallet to prevent transactions
 
   @CreateDateColumn({ name: 'created_at' })
   @Exclude()
