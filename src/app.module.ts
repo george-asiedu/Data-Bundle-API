@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { SharedModule } from './shared/shared.module';
 import { UploadModule } from './upload/upload.module';
 import { PaymentModule } from './payment/payment.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PaymentModule } from './payment/payment.module';
     SharedModule,
     UploadModule,
     PaymentModule,
+    SubscriptionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
