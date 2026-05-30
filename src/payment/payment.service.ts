@@ -17,7 +17,7 @@ import { WalletRepository } from './repositories/wallet.repository';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { QueryRunner } from 'typeorm';
 import { UserRepository } from '../auth/repositories/user.repository';
-import { AccountStatus } from '../auth/auth.types';
+import { AccountStatus, Role } from '../auth/auth.types';
 
 @Injectable()
 export class PaymentService {
@@ -54,22 +54,39 @@ export class PaymentService {
    * @returns A promise resolving to the transaction initialization response
    */
   async initializeTransaction(payload: InitializePaymentDto, userId: string) {
-    if (!userId) {
-      throw new BadRequestException('User ID is required');
+    const user = await this._userRepo.find(userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
     }
 
     try {
       const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
+      const paystackPayload: any = {
+        email: payload.email,
+        amount: payload.amount,
+        callback_url: callbackUrl,
+        metadata: { userId, purpose: TransactionPurpose.TOP_UP },
+      };
+
+      // SPLIT LOGIC: If a Sub-Agent is topping up, route cash to their Parent Agent
+      if (user.role === Role.SUB_AGENT && user.parentAgentId) {
+        const parentAgent = await this._userRepo.find(user.parentAgentId);
+
+        if (!parentAgent || !parentAgent.paystackSubaccountCode) {
+          throw new BadRequestException(
+            'Parent Agent has not completed financial setup.',
+          );
+        }
+
+        // Attach the subaccount code to trigger Paystack's split feature
+        paystackPayload.subaccount = parentAgent.paystackSubaccountCode;
+      }
+
       const response = await axios.post(
         `${this._paystackBaseUrl}/transaction/initialize`,
-        {
-          email: payload.email,
-          amount: payload.amount * 100,
-          callback_url: callbackUrl,
-          metadata: { userId, purpose: TransactionPurpose.TOP_UP },
-        },
+        paystackPayload,
         { headers: this.headers },
       );
       return response.data;
@@ -78,6 +95,7 @@ export class PaymentService {
         throw new BadRequestException(error.message);
 
       this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Failed to generate payment link');
     }
   }
 
@@ -103,7 +121,7 @@ export class PaymentService {
 
       const paystackData = response.data.data;
       const status = paystackData.status;
-      const amountInGhs = paystackData.amount / 100;
+      const amountInGhs = paystackData.amount;
       const purpose = paystackData.metadata?.purpose;
 
       const userId = paystackData.metadata?.userId as string;
@@ -233,7 +251,7 @@ export class PaymentService {
 
     const data = payload.data;
     const paystackRef = data.reference;
-    const amountInGhs = data.amount / 100;
+    const amountInGhs = data.amount;
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose;
 
