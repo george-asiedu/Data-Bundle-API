@@ -315,4 +315,55 @@ export class PaymentService {
       throw new InternalServerErrorException('Webhook processing failed');
     }
   }
+
+  /**
+   * Verifies an account number and bank code via Paystack
+   */
+  async resolveAccountNumber(accountNumber: string, bankCode: string) {
+    try {
+      const response = await axios.get(
+        `${this._paystackBaseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+        { headers: this.headers },
+      );
+      return response.data;
+    } catch (error: any) {
+      this._logger.error(`Account resolution failed: ${error.message}`);
+      throw new BadRequestException(
+        'Could not verify bank account details. Please check the number and bank.',
+      );
+    }
+  }
+
+  /**
+   * Creates a Paystack Subaccount for an Agent during onboarding
+   */
+  async createSubaccount(
+    businessName: string,
+    settlementBank: string,
+    accountNumber: string,
+    platformPercentage: number = 0, // Set default platform cut here
+  ) {
+    try {
+      const response = await axios.post(
+        `${this._paystackBaseUrl}/subaccount`,
+        {
+          business_name: businessName,
+          settlement_bank: settlementBank,
+          account_number: accountNumber,
+          percentage_charge: platformPercentage,
+        },
+        { headers: this.headers },
+      );
+
+      // Return the subaccount_code to be saved in the users table
+      return response.data.data.subaccount_code;
+    } catch (error: any) {
+      this._logger.error(
+        `Subaccount creation failed: ${error.response?.data?.message || error.message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to setup financial profile with the payment gateway.',
+      );
+    }
+  }
 }
