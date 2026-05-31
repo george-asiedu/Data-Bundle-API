@@ -31,9 +31,10 @@ export class UserRepository {
     user.id = await this._getNextId(assignedRole);
     user.role = assignedRole;
     user.email = data.email;
-    user.password = data.password;
+    user.password = data.password ?? '';
     user.fullName = data.fullName;
     user.provider = AuthProvider.LOCAL;
+    user.backupCode = data.backupCode ?? '';
     return await queryRunner.manager.save(user);
   }
 

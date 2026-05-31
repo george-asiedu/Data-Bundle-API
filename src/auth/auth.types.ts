@@ -35,6 +35,7 @@ export type CreateUserType = {
   providerId?: string;
   role?: Role;
   fullName?: string;
+  backupCode?: string;
 } & Partial<Pick<RegisterDto, 'password'>> &
   Omit<RegisterDto, 'confirmPassword' | 'password'>;
 
