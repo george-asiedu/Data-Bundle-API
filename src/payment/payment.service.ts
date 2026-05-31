@@ -20,6 +20,8 @@ import { UserRepository } from '../auth/repositories/user.repository';
 import { AccountStatus, Role } from '../auth/auth.types';
 import { CompleteFinancialSetupDto } from './dto/financial-setup.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
+import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 
 @Injectable()
 export class PaymentService {
@@ -34,6 +36,8 @@ export class PaymentService {
     private _queryRunnerExec: QueryRunnerExec,
     private readonly _userRepo: UserRepository,
     private _subscriptionService: SubscriptionService,
+    private __paymentFailureMailer: PaymentFailureMailer,
+    private _paymentSuccessMailer: PaymentSuccessMailer,
   ) {
     this._paystackSecretKey = this._configService.get<string>(
       'PAYSTACK_SECRET_KEY',
@@ -273,7 +277,6 @@ export class PaymentService {
   async processWebhookEvent(payload: any): Promise<void> {
     const { event, data } = payload;
 
-    // We only care about charge.success for wallet/subscription operations
     if (event !== 'charge.success') {
       this._logger.log(`Received non-processable webhook event: ${event}`);
       return;
@@ -281,18 +284,42 @@ export class PaymentService {
 
     const { reference } = data;
 
-    // Idempotency check: Don't process duplicate hooks
-    const existingTx = await this._transactionRepo.findByPaystackRef(
-      reference as string,
-    );
-    if (existingTx) {
-      this._logger.log(
-        `Transaction ${reference} already processed. Skipping webhook.`,
+    try {
+      // Idempotency check: Don't process duplicate hooks
+      const existingTx = await this._transactionRepo.findByPaystackRef(
+        reference as string,
       );
-      return;
-    }
+      if (existingTx) {
+        this._logger.log(
+          `Transaction ${reference} already processed. Skipping webhook.`,
+        );
+        return;
+      }
 
-    await this.handleSuccessfulPayment(reference as string, data);
+      await this.handleSuccessfulPayment(reference as string, data);
+    } catch (error) {
+      this._logger.error(
+        `Webhook processing failed for ${reference}: ${(error as Error).message}`,
+      );
+
+      // Attempt to notify the user if an error occurs
+      const userEmail = data.customer?.email;
+      if (userEmail) {
+        await this.__paymentFailureMailer
+          .sendMail({
+            email: userEmail,
+            name: data.customer?.first_name || 'Agent',
+            reference: reference,
+            errorReason:
+              'Payment verified, but account update failed. Contact support.',
+          })
+          .catch((mailErr) =>
+            this._logger.error(
+              `Failed to send failure email: ${mailErr.message}`,
+            ),
+          );
+      }
+    }
   }
 
   private async handleSuccessfulPayment(
@@ -372,6 +399,19 @@ export class PaymentService {
       }
 
       await this._queryRunnerExec.commit(queryRunner);
+
+      await this._paymentSuccessMailer
+        .sendMail({
+          email: data.customer.email,
+          name: data.customer.first_name || 'Agent',
+          amountGhs: Number(data.amount) / 100,
+          purpose: data.metadata.purpose,
+          reference: paystackRef,
+        })
+        .catch((err) =>
+          this._logger.error(`Failed to send success mail: ${err.message}`),
+        );
+
       this._logger.log(
         `Successfully processed ${purpose} for user ${userId} via ref: ${paystackRef}`,
       );
