@@ -7,11 +7,13 @@ import { Wallet } from './entities/wallet.entity';
 import { Transaction } from './entities/transactions.entity';
 import { WalletRepository } from './repositories/wallet.repository';
 import { TransactionRepository } from './repositories/transaction.repository';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Wallet, Transaction]),
     forwardRef(() => AuthModule),
+    SubscriptionModule,
   ],
   providers: [PaymentService, WalletRepository, TransactionRepository],
   controllers: [PaymentController],
