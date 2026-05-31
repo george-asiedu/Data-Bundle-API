@@ -12,3 +12,15 @@ export class LoginDto {
   @ApiProperty()
   password: string;
 }
+
+export class LoginWithCodeDto {
+  @IsNotEmpty()
+  @IsEmail()
+  @ApiProperty()
+  email: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @ApiProperty()
+  backupCode: string;
+}
