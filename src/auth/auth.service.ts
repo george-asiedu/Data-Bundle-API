@@ -36,6 +36,8 @@ import { MfaMailer } from './mailer/mfa.mailer';
 import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { EmailDto } from './dto/email.dto';
+import { LogAction } from '../audit/log-action.types';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -60,6 +62,7 @@ export class AuthService {
     private readonly _walletRepo: WalletRepository,
     private readonly _mfaMailer: MfaMailer,
     private readonly _mfaVerificationRepo: MfaVerificationRepository,
+    private readonly _auditService: AuditService,
   ) {
     this._secretKey = this._configService.get('SECRET_KEY') as string;
     this._oauthSuccessRedirect = this._configService.get<string>(
@@ -419,7 +422,7 @@ export class AuthService {
     }
   }
 
-  async login(body: LoginDto) {
+  async login(body: LoginDto, req: Request) {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
@@ -428,11 +431,11 @@ export class AuthService {
       const samePassword = await compare(body.password, hashedPassword);
 
       if (!user || !samePassword) {
-        // await this._auditService.logAction(LogAction.LOGIN_FAILED, null, {
-        //   metadata: { email: body.email },
-        //   ipAddress: req.ip,
-        //   userAgent: req.headers['user-agent'],
-        // });
+        await this._auditService.logAction(LogAction.LOGIN_FAILED, null, {
+          metadata: { email: body.email },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
         throw new ApplicationException('Invalid email and or password');
       }
 
@@ -502,7 +505,7 @@ export class AuthService {
     }
   }
 
-  async verifyMfa(body: VerifyMfaDto) {
+  async verifyMfa(body: VerifyMfaDto, req: Request) {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
@@ -546,10 +549,10 @@ export class AuthService {
       const accessToken = this._generateAccessToken(user.id);
       const refreshToken = this._generateRefreshToken(user.id);
 
-      // await this._auditService.logAction(LogAction.LOGIN, user.id, {
-      //   ipAddress: req.ip,
-      //   userAgent: req.headers['user-agent'],
-      // });
+      await this._auditService.logAction(LogAction.LOGIN, user.id, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       return {
         message: 'You are logged-in successfully',
@@ -572,12 +575,17 @@ export class AuthService {
     }
   }
 
-  async loginWithBackupCode(body: LoginWithCodeDto) {
+  async loginWithBackupCode(body: LoginWithCodeDto, req: Request) {
     const queryRunner = await this._queryRunnerExec.getRunner();
 
     try {
       const user = await this._userRepo.find(body.email);
       if (!user || user.backupCode !== body.backupCode) {
+        await this._auditService.logAction(LogAction.LOGIN_FAILED, null, {
+          metadata: { email: body.email },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
         throw new UnauthorizedException('Invalid email or backup code.');
       }
 
@@ -586,6 +594,11 @@ export class AuthService {
 
       const accessToken = this._generateAccessToken(user.id);
       const refreshToken = this._generateRefreshToken(user.id);
+
+      await this._auditService.logAction(LogAction.LOGIN, user.id, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       return {
         message: 'Login successful.',
