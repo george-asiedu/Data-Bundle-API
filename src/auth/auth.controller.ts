@@ -36,7 +36,7 @@ import {
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { EmailDto } from './dto/email.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, LoginWithCodeDto } from './dto/login.dto';
 import { AuthGuard } from './guards/auth.guard';
 import { Request, Response } from 'express';
 import { OAuthProfile } from './auth.types';
@@ -173,6 +173,20 @@ export class AuthController {
   @Post('login')
   login(@Body(ValidationPipe) body: LoginDto) {
     return this._authService.login(body);
+  }
+
+  /**
+   * allows for user login via backup code
+   * @param {EmailDto} body
+   * @param req
+   * @returns
+   */
+  @ApiOperation(swaggerLoginResponse)
+  @UseInterceptors(ClassSerializerInterceptor)
+  @HttpCode(HttpStatus.OK)
+  @Post('login-with-backup-code')
+  loginWithBackupCode(@Body(ValidationPipe) body: LoginWithCodeDto) {
+    return this._authService.loginWithBackupCode(body);
   }
 
   /**
