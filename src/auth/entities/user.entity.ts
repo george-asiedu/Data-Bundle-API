@@ -104,6 +104,10 @@ export class User {
   })
   commissionPercentage: number;
 
+  @Column({ name: 'backup_code', nullable: true })
+  @Exclude()
+  backupCode?: string;
+
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
 
