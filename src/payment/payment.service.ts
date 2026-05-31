@@ -19,6 +19,7 @@ import { QueryRunner } from 'typeorm';
 import { UserRepository } from '../auth/repositories/user.repository';
 import { AccountStatus, Role } from '../auth/auth.types';
 import { CompleteFinancialSetupDto } from './dto/financial-setup.dto';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class PaymentService {
@@ -32,6 +33,7 @@ export class PaymentService {
     private _walletRepo: WalletRepository,
     private _queryRunnerExec: QueryRunnerExec,
     private readonly _userRepo: UserRepository,
+    private _subscriptionService: SubscriptionService,
   ) {
     this._paystackSecretKey = this._configService.get<string>(
       'PAYSTACK_SECRET_KEY',
@@ -83,6 +85,7 @@ export class PaymentService {
 
         // Attach the subaccount code to trigger Paystack's split feature
         paystackPayload.subaccount = parentAgent.paystackSubaccountCode;
+        paystackPayload.bearer = 'subaccount';
       }
 
       const response = await axios.post(
@@ -122,7 +125,7 @@ export class PaymentService {
 
       const paystackData = response.data.data;
       const status = paystackData.status;
-      const amountInGhs = paystackData.amount;
+      const amountInPesewas = Number(paystackData.amount);
       const purpose = paystackData.metadata?.purpose;
 
       const userId = paystackData.metadata?.userId as string;
@@ -153,7 +156,7 @@ export class PaymentService {
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.REGISTRATION_FEE,
-            amount: amountInGhs,
+            amount: amountInPesewas,
             balanceAfter: Number(wallet.balance),
             reference: `REG-${Date.now()}`,
             paystackRef: reference,
@@ -165,15 +168,31 @@ export class PaymentService {
         this._logger.log(
           `Account successfully activated for user ${userId} via registration payment.`,
         );
+      } else if (purpose === TransactionPurpose.SUBSCRIPTION_PAYMENT) {
+        await this._subscriptionService.activateSubscription(queryRunner, user);
+
+        await this._transactionRepo.add(
+          queryRunner,
+          {
+            type: TransactionType.CREDIT,
+            purpose: TransactionPurpose.SUBSCRIPTION_PAYMENT,
+            amount: amountInPesewas,
+            balanceAfter: Number(wallet.balance),
+            reference: `SUB-${Date.now()}`,
+            paystackRef: reference,
+          },
+          user,
+          wallet,
+        );
       } else {
-        const balanceAfter = Number(wallet.balance) + amountInGhs;
+        const balanceAfter: number = Number(wallet.balance) + amountInPesewas;
 
         await this._transactionRepo.add(
           queryRunner,
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.TOP_UP,
-            amount: amountInGhs,
+            amount: amountInPesewas,
             balanceAfter: balanceAfter,
             reference: `TOP-UP-${Date.now()}`,
             paystackRef: reference,
@@ -252,7 +271,7 @@ export class PaymentService {
 
     const data = payload.data;
     const paystackRef = data.reference;
-    const amountInGhs = data.amount;
+    const amountInPesewas = Number(data.amount);
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose;
 
@@ -290,7 +309,7 @@ export class PaymentService {
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.REGISTRATION_FEE,
-            amount: amountInGhs,
+            amount: amountInPesewas,
             balanceAfter: Number(wallet.balance),
             reference: `REG-${Date.now()}`,
             paystackRef: paystackRef,
@@ -303,14 +322,14 @@ export class PaymentService {
           `Account successfully activated for user ${userId} via registration payment.`,
         );
       } else if (purpose === TransactionPurpose.TOP_UP) {
-        const balanceAfter = Number(wallet.balance) + amountInGhs;
+        const balanceAfter: number = Number(wallet.balance) + amountInPesewas;
 
         await this._transactionRepo.add(
           queryRunner,
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.TOP_UP,
-            amount: amountInGhs,
+            amount: amountInPesewas,
             balanceAfter: balanceAfter,
             reference: `TOP-UP-${Date.now()}`,
             paystackRef: paystackRef,
@@ -320,8 +339,23 @@ export class PaymentService {
         );
 
         await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
-      }
+      } else if (purpose === TransactionPurpose.SUBSCRIPTION_PAYMENT) {
+        await this._subscriptionService.activateSubscription(queryRunner, user);
 
+        await this._transactionRepo.add(
+          queryRunner,
+          {
+            type: TransactionType.CREDIT,
+            purpose: TransactionPurpose.SUBSCRIPTION_PAYMENT,
+            amount: amountInPesewas,
+            balanceAfter: Number(wallet.balance),
+            reference: `SUB-${Date.now()}`,
+            paystackRef: paystackRef,
+          },
+          user,
+          wallet,
+        );
+      }
       await this._queryRunnerExec.commit(queryRunner);
       this._logger.log(
         `Successfully credited wallet for user ${userId} via ${paystackRef}`,
