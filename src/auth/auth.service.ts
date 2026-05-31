@@ -24,7 +24,7 @@ import { EncryptionService } from './encryption.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfirmationMailer } from './mailer/confirmation.mailer';
 import { ResetPasswordMailer } from './mailer/reset-password.mailer';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, LoginWithCodeDto } from './dto/login.dto';
 import { Request, Response } from 'express';
 import { ApplicationException } from '../lib/exception/app.exception';
 import { DataMessage, MessageOnly } from '../lib/utils/types.utils';
@@ -569,6 +569,38 @@ export class AuthService {
 
       this._logger.error((error as Error).message);
       throw new InternalServerErrorException('Verification failed');
+    }
+  }
+
+  async loginWithBackupCode(body: LoginWithCodeDto) {
+    const queryRunner = await this._queryRunnerExec.getRunner();
+
+    try {
+      const user = await this._userRepo.find(body.email);
+      if (!user || user.backupCode !== body.backupCode) {
+        throw new UnauthorizedException('Invalid email or backup code.');
+      }
+
+      await this._userRepo.update(queryRunner, user, { backupCode: '' });
+      await this._queryRunnerExec.commit(queryRunner);
+
+      const accessToken = this._generateAccessToken(user.id);
+      const refreshToken = this._generateRefreshToken(user.id);
+
+      return {
+        message: 'Login successful.',
+        data: {
+          user,
+          accessToken: this._encryptionService.encrypt(accessToken),
+          refreshToken: this._encryptionService.encrypt(refreshToken),
+        },
+      };
+    } catch (error) {
+      await this._queryRunnerExec.rollback(queryRunner);
+      this._logger.error(
+        `Backup code login failed: ${(error as Error).message}`,
+      );
+      throw error;
     }
   }
 
