@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Role } from '../auth/auth.types';
 import { SubscriptionService } from './subscription.service';
 import { Request } from 'express';
@@ -16,7 +21,16 @@ export class SubscriptionGuard implements CanActivate {
 
     // Bypass for super admin
     if (user.role === Role.SUPER_ADMIN) return true;
+    const hasAccess = await this._subService.hasAccess(user.id);
 
-    return await this._subService.hasAccess(user.id);
+    if (!hasAccess) {
+      throw new ForbiddenException({
+        message:
+          'Your subscription has expired. Please renew to access this resource.',
+        code: 'SUBSCRIPTION_EXPIRED',
+      });
+    }
+
+    return true;
   }
 }
