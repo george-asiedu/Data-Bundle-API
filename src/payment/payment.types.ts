@@ -10,3 +10,18 @@ export enum TransactionPurpose {
   WITHDRAWAL = 'WITHDRAWAL',
   SUBSCRIPTION_PAYMENT = 'SUBSCRIPTION_PAYMENT',
 }
+
+export interface PaymentFailurePayload {
+  email: string;
+  name: string;
+  reference: string;
+  errorReason: string;
+}
+
+export interface PaymentSuccessPayload {
+  email: string;
+  name: string;
+  amountGhs: number;
+  purpose: string;
+  reference: string;
+}
