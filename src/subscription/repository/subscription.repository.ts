@@ -55,4 +55,24 @@ export class SubscriptionsRepository {
   ): Promise<Subscription> {
     return await queryRunner.manager.save(subscription);
   }
+
+  /**
+   * Finds all active subscriptions expiring on a specific date
+   */
+  async findExpiringSubscriptions(targetDate: Date): Promise<Subscription[]> {
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return await this._getQueryBuilder()
+      .leftJoinAndSelect('subscriptions.user', 'user')
+      .where('subscriptions.currentPeriodEnd >= :startOfDay', { startOfDay })
+      .andWhere('subscriptions.currentPeriodEnd <= :endOfDay', { endOfDay })
+      .andWhere('subscriptions.status = :status', {
+        status: SubscriptionStatus.ACTIVE,
+      })
+      .getMany();
+  }
 }
