@@ -138,7 +138,5 @@ export class PaymentController {
     }
 
     await this._paymentService.processWebhookEvent(payload);
-
-    return { message: 'Webhook received' };
   }
 }
