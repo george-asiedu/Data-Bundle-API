@@ -21,6 +21,7 @@ import { PassportModule } from '@nestjs/passport';
 import { PaymentModule } from '../payment/payment.module';
 import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
 import { MfaVerification } from './entities/mfa-verification.entity';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { MfaVerification } from './entities/mfa-verification.entity';
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     forwardRef(() => PaymentModule),
+    AuditModule,
   ],
   controllers: [AuthController],
   providers: [
