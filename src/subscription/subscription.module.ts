@@ -5,13 +5,20 @@ import { AuthModule } from '../auth/auth.module';
 import { SubscriptionsRepository } from './repository/subscription.repository';
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionService } from './subscription.service';
+import { GracePeriodMailer } from './mailer/grace-period.mailer';
+import { RenewedSubscriptionMailer } from './mailer/renewed-subscription.mailer';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Subscription]),
     forwardRef(() => AuthModule),
   ],
-  providers: [SubscriptionsRepository, SubscriptionService],
+  providers: [
+    SubscriptionsRepository,
+    SubscriptionService,
+    GracePeriodMailer,
+    RenewedSubscriptionMailer,
+  ],
   controllers: [SubscriptionController],
   exports: [SubscriptionService],
 })
