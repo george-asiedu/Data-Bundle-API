@@ -76,6 +76,7 @@ export class UserRepository {
         | 'accountStatus'
         | 'role'
         | 'lastLoginAt'
+        | 'backupCode'
       >
     >,
   ) {
