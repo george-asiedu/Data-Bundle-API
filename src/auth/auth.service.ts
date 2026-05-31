@@ -79,8 +79,15 @@ export class AuthService {
       const existingUser = await this._userRepo.find(body.email);
       if (existingUser) throw new ApplicationException('Email already exist');
 
+      const rawBackupCode = `AG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const hashedBackupCode = await this._hashPassword(rawBackupCode);
+
       const { user, emailVerification } =
-        await this._addUserAndEmailVerification(queryRunner, body);
+        await this._addUserAndEmailVerification(
+          queryRunner,
+          body,
+          hashedBackupCode,
+        );
 
       await this._walletRepo.add(queryRunner, { balance: 0 }, user);
 
@@ -98,6 +105,7 @@ export class AuthService {
         data: {
           userId: user.id,
           accountStatus: user.accountStatus,
+          backupCode: rawBackupCode,
         },
       };
     } catch (error) {
@@ -115,11 +123,13 @@ export class AuthService {
   private async _addUserAndEmailVerification(
     queryRunner: QueryRunner,
     body: RegisterDto,
+    hashedBackupCode: string,
   ) {
     const user = await this._userRepo.add(queryRunner, {
       fullName: body.fullName,
       email: body.email,
       password: await this._hashPassword(body.password),
+      backupCode: hashedBackupCode,
     });
 
     const emailVerification = await this._emailVerificationRepo.add(
