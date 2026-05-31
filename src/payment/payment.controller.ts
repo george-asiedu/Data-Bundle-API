@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   BadRequestException,
@@ -11,6 +12,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
@@ -31,6 +33,7 @@ import {
   CompleteFinancialSetupDto,
   VerifyBankDto,
 } from './dto/financial-setup.dto';
+import { Response } from 'express';
 
 @ApiTags('Payment')
 @Controller('payment')
@@ -122,11 +125,11 @@ export class PaymentController {
   })
   @HttpCode(HttpStatus.OK)
   @Post('webhook')
-  async handleWebhook(
+  handleWebhook(
     @Headers('x-paystack-signature') signature: string,
     @Body() payload: any,
+    @Res() res: Response,
   ) {
-    // Verify the webhook is genuinely from Paystack
     const hash = crypto
       .createHmac('sha512', this._paystackSecretKey)
       .update(JSON.stringify(payload))
@@ -134,9 +137,17 @@ export class PaymentController {
 
     if (hash !== signature) {
       this._logger.warn('Invalid Paystack webhook signature');
-      return { message: 'Invalid signature' };
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ message: 'Invalid signature' });
     }
 
-    await this._paymentService.processWebhookEvent(payload);
+    this._paymentService.processWebhookEvent(payload).catch((err: any) => {
+      this._logger.error(
+        `Unhandled error in background webhook processor: ${err.message}`,
+      );
+    });
+
+    return res.status(HttpStatus.OK).send('Webhook received');
   }
 }
