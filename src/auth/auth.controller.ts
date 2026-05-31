@@ -171,8 +171,8 @@ export class AuthController {
   @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  login(@Body(ValidationPipe) body: LoginDto) {
-    return this._authService.login(body);
+  login(@Body(ValidationPipe) body: LoginDto, @Req() req: Request) {
+    return this._authService.login(body, req);
   }
 
   /**
@@ -185,8 +185,11 @@ export class AuthController {
   @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('login-with-backup-code')
-  loginWithBackupCode(@Body(ValidationPipe) body: LoginWithCodeDto) {
-    return this._authService.loginWithBackupCode(body);
+  loginWithBackupCode(
+    @Body(ValidationPipe) body: LoginWithCodeDto,
+    @Req() req: Request,
+  ) {
+    return this._authService.loginWithBackupCode(body, req);
   }
 
   /**
@@ -197,11 +200,11 @@ export class AuthController {
   @ApiOperation(swaggerVerifyMfaResponse)
   @HttpCode(HttpStatus.OK)
   @Post('verify-mfa')
-  verifyMfa(@Body(ValidationPipe) body: VerifyMfaDto) {
+  verifyMfa(@Body(ValidationPipe) body: VerifyMfaDto, @Req() req: Request) {
     if (!body.mfaToken || !body.code) {
       throw new BadRequestException('Token and code are required');
     }
-    return this._authService.verifyMfa(body);
+    return this._authService.verifyMfa(body, req);
   }
 
   /**
