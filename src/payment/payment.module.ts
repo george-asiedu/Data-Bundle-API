@@ -8,6 +8,8 @@ import { Transaction } from './entities/transactions.entity';
 import { WalletRepository } from './repositories/wallet.repository';
 import { TransactionRepository } from './repositories/transaction.repository';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
+import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 
 @Module({
   imports: [
@@ -15,7 +17,13 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     forwardRef(() => AuthModule),
     SubscriptionModule,
   ],
-  providers: [PaymentService, WalletRepository, TransactionRepository],
+  providers: [
+    PaymentService,
+    WalletRepository,
+    TransactionRepository,
+    PaymentFailureMailer,
+    PaymentSuccessMailer,
+  ],
   controllers: [PaymentController],
   exports: [PaymentService, WalletRepository, TransactionRepository],
 })
