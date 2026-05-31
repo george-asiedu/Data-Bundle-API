@@ -7,11 +7,13 @@ import { SubscriptionController } from './subscription.controller';
 import { SubscriptionService } from './subscription.service';
 import { GracePeriodMailer } from './mailer/grace-period.mailer';
 import { RenewedSubscriptionMailer } from './mailer/renewed-subscription.mailer';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Subscription]),
     forwardRef(() => AuthModule),
+    forwardRef(() => PaymentModule),
   ],
   providers: [
     SubscriptionsRepository,
