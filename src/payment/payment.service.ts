@@ -266,26 +266,45 @@ export class PaymentService {
     }
   }
 
-  async processWebhookEvent(payload: any) {
-    if (payload.event !== 'charge.success') return;
+  /**
+   * Primary entry point for Paystack Webhook events.
+   * Routes the payload to the appropriate handler based on the event type.
+   */
+  async processWebhookEvent(payload: any): Promise<void> {
+    const { event, data } = payload;
 
-    const data = payload.data;
-    const paystackRef = data.reference;
-    const amountInPesewas = Number(data.amount);
-    const userId = data.metadata?.userId as string;
-    const purpose = data.metadata?.purpose;
+    // We only care about charge.success for wallet/subscription operations
+    if (event !== 'charge.success') {
+      this._logger.log(`Received non-processable webhook event: ${event}`);
+      return;
+    }
 
-    if (!userId || !purpose) return;
+    const { reference } = data;
 
-    // IIdempotency check: Don't process duplicate hooks
+    // Idempotency check: Don't process duplicate hooks
     const existingTx = await this._transactionRepo.findByPaystackRef(
-      paystackRef as string,
+      reference as string,
     );
     if (existingTx) {
       this._logger.log(
-        `Transaction ${paystackRef} already processed. Skipping.`,
+        `Transaction ${reference} already processed. Skipping webhook.`,
       );
       return;
+    }
+
+    await this.handleSuccessfulPayment(reference as string, data);
+  }
+
+  private async handleSuccessfulPayment(
+    paystackRef: string,
+    data: any,
+  ): Promise<void> {
+    const userId = data.metadata?.userId as string;
+    const purpose = data.metadata?.purpose as TransactionPurpose;
+    const amountInPesewas = Number(data.amount);
+
+    if (!userId || !purpose) {
+      throw new BadRequestException('Missing required transaction metadata');
     }
 
     let queryRunner: QueryRunner | undefined = undefined;
@@ -294,16 +313,15 @@ export class PaymentService {
       queryRunner = await this._queryRunnerExec.getRunner();
 
       const wallet = await this._walletRepo.findByUserId(userId);
-      if (!wallet) throw new ApplicationException('Wallet not found');
-
       const user = await this._userRepo.find(userId);
-      if (!user) throw new ApplicationException('User not found');
+      if (!wallet || !user)
+        throw new ApplicationException('User or Wallet not found');
 
+      // Route logic based on transaction purpose
       if (purpose === TransactionPurpose.REGISTRATION_FEE) {
         user.accountStatus = AccountStatus.ACTIVE;
         await queryRunner.manager.save(user);
 
-        // Log payment as a non-wallet transaction (balanceAfter stays the same)
         await this._transactionRepo.add(
           queryRunner,
           {
@@ -312,33 +330,11 @@ export class PaymentService {
             amount: amountInPesewas,
             balanceAfter: Number(wallet.balance),
             reference: `REG-${Date.now()}`,
-            paystackRef: paystackRef,
+            paystackRef,
           },
           user,
           wallet,
         );
-
-        this._logger.log(
-          `Account successfully activated for user ${userId} via registration payment.`,
-        );
-      } else if (purpose === TransactionPurpose.TOP_UP) {
-        const balanceAfter: number = Number(wallet.balance) + amountInPesewas;
-
-        await this._transactionRepo.add(
-          queryRunner,
-          {
-            type: TransactionType.CREDIT,
-            purpose: TransactionPurpose.TOP_UP,
-            amount: amountInPesewas,
-            balanceAfter: balanceAfter,
-            reference: `TOP-UP-${Date.now()}`,
-            paystackRef: paystackRef,
-          },
-          user,
-          wallet,
-        );
-
-        await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
       } else if (purpose === TransactionPurpose.SUBSCRIPTION_PAYMENT) {
         await this._subscriptionService.activateSubscription(queryRunner, user);
 
@@ -350,22 +346,41 @@ export class PaymentService {
             amount: amountInPesewas,
             balanceAfter: Number(wallet.balance),
             reference: `SUB-${Date.now()}`,
-            paystackRef: paystackRef,
+            paystackRef,
+          },
+          user,
+          wallet,
+        );
+      } else if (purpose === TransactionPurpose.TOP_UP) {
+        const balanceAfter = Number(wallet.balance) + amountInPesewas;
+
+        await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
+
+        await this._transactionRepo.add(
+          queryRunner,
+          {
+            type: TransactionType.CREDIT,
+            purpose: TransactionPurpose.TOP_UP,
+            amount: amountInPesewas,
+            balanceAfter,
+            reference: `TOP-UP-${Date.now()}`,
+            paystackRef,
           },
           user,
           wallet,
         );
       }
+
       await this._queryRunnerExec.commit(queryRunner);
       this._logger.log(
-        `Successfully credited wallet for user ${userId} via ${paystackRef}`,
+        `Successfully processed ${purpose} for user ${userId} via ref: ${paystackRef}`,
       );
     } catch (error) {
       if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
       this._logger.error(
-        `Failed to process webhook for ${paystackRef}: ${(error as Error).message}`,
+        `Failed to handle successful payment ${paystackRef}: ${(error as Error).message}`,
       );
-      throw new InternalServerErrorException('Webhook processing failed');
+      throw error;
     }
   }
 
