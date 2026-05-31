@@ -22,6 +22,7 @@ import { CompleteFinancialSetupDto } from './dto/financial-setup.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
+import { EncryptionService } from '../auth/encryption.service';
 
 @Injectable()
 export class PaymentService {
@@ -38,6 +39,7 @@ export class PaymentService {
     private _subscriptionService: SubscriptionService,
     private __paymentFailureMailer: PaymentFailureMailer,
     private _paymentSuccessMailer: PaymentSuccessMailer,
+    private readonly _encryptionService: EncryptionService,
   ) {
     this._paystackSecretKey = this._configService.get<string>(
       'PAYSTACK_SECRET_KEY',
@@ -509,6 +511,10 @@ export class PaymentService {
       user.paystackSubaccountCode = subaccountCode;
       user.settlementBankAccount = payload.bankCode;
       user.accountNumber = payload.accountNumber;
+
+      if (payload.vendorApiKey) {
+        user.apiKey = this._encryptionService.encrypt(payload.vendorApiKey);
+      }
 
       await queryRunner.manager.save(user);
       await this._queryRunnerExec.commit(queryRunner);

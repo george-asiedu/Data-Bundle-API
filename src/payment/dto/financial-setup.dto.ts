@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
 
 export class VerifyBankDto {
   @ApiProperty({ example: '0123456789' })
@@ -30,4 +30,9 @@ export class CompleteFinancialSetupDto {
   @IsNotEmpty()
   @Length(10, 15)
   accountNumber: string;
+
+  @ApiProperty({ example: 'hfbleklgmmelafjbef' })
+  @IsString()
+  @IsOptional()
+  vendorApiKey?: string;
 }
