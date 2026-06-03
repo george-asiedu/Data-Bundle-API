@@ -74,21 +74,12 @@ export class User {
   @OneToMany(() => Transaction, (transaction) => transaction.user)
   transactions?: Array<Transaction>;
 
-  @Column({ name: 'mfa_enabled', type: 'boolean', default: false })
-  mfaEnabled: boolean;
-
-  @Column({ name: 'mfa_secret', nullable: true })
-  @Exclude()
-  mfaSecret?: string;
-
   @Column({ name: 'api_key', nullable: true })
   @Exclude()
   apiKey?: string;
 
-  @Column({ name: 'webhook_url', nullable: true })
-  webhookUrl?: string;
-
   @Column({ name: 'paystack_subaccount_code', nullable: true })
+  @Exclude()
   paystackSubaccountCode?: string; // Stores the Paystack split ID
 
   @Column({ name: 'settlement_bank_account', nullable: true })
@@ -102,6 +93,7 @@ export class User {
     type: 'integer',
     default: 10,
   })
+  @Exclude()
   commissionPercentage: number;
 
   @Column({ name: 'backup_code', nullable: true })
