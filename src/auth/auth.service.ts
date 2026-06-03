@@ -695,11 +695,11 @@ export class AuthService {
       });
       await this._queryRunnerExec.commit(queryRunner);
 
-      // await this._auditService.logAction(LogAction.LOGIN, user.id, {
-      //   metadata: { provider: profile.provider, isNewUser: isNew },
-      //   ipAddress: req.ip,
-      //   userAgent: req.headers['user-agent'],
-      // });
+      await this._auditService.logAction(LogAction.LOGIN, user.id, {
+        metadata: { provider: profile.provider, isNewUser: isNew },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       const accessToken = this._generateAccessToken(user.id);
       const refreshToken = this._generateRefreshToken(user.id);
