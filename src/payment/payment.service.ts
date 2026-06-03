@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   BadRequestException,
   Injectable,
@@ -11,7 +8,12 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { ApplicationException } from '../lib/exception/app.exception';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
-import { TransactionPurpose, TransactionType } from './payment.types';
+import {
+  PaystackCreateSubaccountResponse,
+  PaystackVerifyResponse,
+  TransactionPurpose,
+  TransactionType,
+} from './payment.types';
 import { TransactionRepository } from './repositories/transaction.repository';
 import { WalletRepository } from './repositories/wallet.repository';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
@@ -72,7 +74,14 @@ export class PaymentService {
       const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
-      const paystackPayload: any = {
+      const paystackPayload: {
+        email: string;
+        amount: number;
+        callback_url: string;
+        metadata: { userId: string; purpose: TransactionPurpose };
+        subaccount?: string;
+        bearer?: string;
+      } = {
         email: payload.email,
         amount: payload.amount,
         callback_url: callbackUrl,
@@ -94,11 +103,17 @@ export class PaymentService {
         paystackPayload.bearer = 'subaccount';
       }
 
-      const response = await axios.post(
-        `${this._paystackBaseUrl}/transaction/initialize`,
-        paystackPayload,
-        { headers: this.headers },
-      );
+      const response = await axios.post<{
+        status: boolean;
+        message: string;
+        data: {
+          authorization_url: string;
+          access_code: string;
+          reference: string;
+        };
+      }>(`${this._paystackBaseUrl}/transaction/initialize`, paystackPayload, {
+        headers: this.headers,
+      });
       return response.data;
     } catch (error: unknown) {
       if (error instanceof ApplicationException)
@@ -110,120 +125,49 @@ export class PaymentService {
   }
 
   /**
-   * Verifies a payment transaction using its reference and processes account activation
-   * if it is a registration fee payment.
+   * Verifies a payment transaction using its reference via the frontend.
+   * Delegates database execution to the primary success handler.
    * @param reference - The transaction reference to verify
    */
   async verifyTransaction(reference: string) {
     // Idempotency check: Don't process if the transaction log already exists
     const existingTx = await this._transactionRepo.findByPaystackRef(reference);
     if (existingTx) {
-      return { message: 'Transaction already processed successfully.' };
+      return {
+        message: 'Transaction already processed successfully.',
+        accountStatus: existingTx.user.accountNumber,
+      };
     }
 
-    let queryRunner: QueryRunner | undefined = undefined;
-
     try {
-      const response = await axios.get(
+      const response = await axios.get<PaystackVerifyResponse>(
         `${this._paystackBaseUrl}/transaction/verify/${reference}`,
         { headers: this.headers },
       );
 
       const paystackData = response.data.data;
       const status = paystackData.status;
-      const amountInPesewas = Number(paystackData.amount);
-      const purpose = paystackData.metadata?.purpose;
-
-      const userId = paystackData.metadata?.userId as string;
-      if (!userId) {
-        throw new BadRequestException(
-          'Transaction metadata is missing user context',
-        );
-      }
 
       if (status !== 'success') {
         throw new BadRequestException('Transaction was not successful');
       }
 
-      queryRunner = await this._queryRunnerExec.getRunner();
+      // This automatically triggers database updates, commits, and emails
+      await this.handleSuccessfulPayment(reference, paystackData);
 
-      const wallet = await this._walletRepo.findByUserId(userId);
-      if (!wallet) throw new ApplicationException('Wallet not found');
-
+      const userId = paystackData.metadata?.userId as string;
       const user = await this._userRepo.find(userId);
-      if (!user) throw new ApplicationException('User not found');
-
-      if (purpose === TransactionPurpose.REGISTRATION_FEE) {
-        user.accountStatus = AccountStatus.ACTIVE;
-        await queryRunner.manager.save(user);
-
-        await this._transactionRepo.add(
-          queryRunner,
-          {
-            type: TransactionType.CREDIT,
-            purpose: TransactionPurpose.REGISTRATION_FEE,
-            amount: amountInPesewas,
-            balanceAfter: Number(wallet.balance),
-            reference: `REG-${Date.now()}`,
-            paystackRef: reference,
-          },
-          user,
-          wallet,
-        );
-
-        this._logger.log(
-          `Account successfully activated for user ${userId} via registration payment.`,
-        );
-      } else if (purpose === TransactionPurpose.SUBSCRIPTION_PAYMENT) {
-        await this._subscriptionService.activateSubscription(queryRunner, user);
-
-        await this._transactionRepo.add(
-          queryRunner,
-          {
-            type: TransactionType.CREDIT,
-            purpose: TransactionPurpose.SUBSCRIPTION_PAYMENT,
-            amount: amountInPesewas,
-            balanceAfter: Number(wallet.balance),
-            reference: `SUB-${Date.now()}`,
-            paystackRef: reference,
-          },
-          user,
-          wallet,
-        );
-      } else {
-        const balanceAfter: number = Number(wallet.balance) + amountInPesewas;
-
-        await this._transactionRepo.add(
-          queryRunner,
-          {
-            type: TransactionType.CREDIT,
-            purpose: TransactionPurpose.TOP_UP,
-            amount: amountInPesewas,
-            balanceAfter: balanceAfter,
-            reference: `TOP-UP-${Date.now()}`,
-            paystackRef: reference,
-          },
-          user,
-          wallet,
-        );
-
-        await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
-      }
-
-      await this._queryRunnerExec.commit(queryRunner);
 
       return {
         message: 'Transaction verified and processed successfully',
-        accountStatus: user.accountStatus,
+        accountStatus: user?.accountStatus,
       };
     } catch (error: unknown) {
-      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
-
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
 
       this._logger.error(
-        `Verification processing failed: ${(error as Error).message}`,
+        `Verification processing failed for ref ${reference}: ${(error as Error).message}`,
       );
       throw new InternalServerErrorException(
         'Something went wrong during payment verification',
@@ -241,12 +185,28 @@ export class PaymentService {
   async initializeTransactionForRegistration(
     payload: InitializePaymentDto,
     userId: string,
-  ) {
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data: {
+      authorization_url: string;
+      access_code: string;
+      reference: string;
+    };
+  }> {
     try {
       const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
-      const response = await axios.post(
+      const response = await axios.post<{
+        status: boolean;
+        message: string;
+        data: {
+          authorization_url: string;
+          access_code: string;
+          reference: string;
+        };
+      }>(
         `${this._paystackBaseUrl}/transaction/initialize`,
         {
           email: payload.email,
@@ -260,9 +220,26 @@ export class PaymentService {
         { headers: this.headers },
       );
       return response.data;
-    } catch (error: any) {
-      const gatewayErrorMessage =
-        error.response?.data?.message || error.message;
+    } catch (error: unknown) {
+      const gatewayErrorMessage = (() => {
+        if (axios.isAxiosError(error)) {
+          const data = error.response?.data as unknown;
+          if (
+            data &&
+            typeof data === 'object' &&
+            'message' in data &&
+            typeof data.message === 'string'
+          ) {
+            return (data as { message: string }).message;
+          }
+          return error.message;
+        }
+        if (error instanceof Error) {
+          return error.message;
+        }
+        return 'Unknown error';
+      })();
+
       this._logger.error(
         `Failed to initialize registration payment: ${gatewayErrorMessage}`,
       );
@@ -276,21 +253,37 @@ export class PaymentService {
    * Primary entry point for Paystack Webhook events.
    * Routes the payload to the appropriate handler based on the event type.
    */
-  async processWebhookEvent(payload: any): Promise<void> {
-    const { event, data } = payload;
+  async processWebhookEvent(payload: {
+    event: string;
+    data: unknown;
+  }): Promise<void> {
+    const event = payload.event;
+    const data = payload.data;
 
     if (event !== 'charge.success') {
       this._logger.log(`Received non-processable webhook event: ${event}`);
       return;
     }
 
-    const { reference } = data;
+    if (typeof data !== 'object' || data === null) {
+      this._logger.error('Received malformed webhook payload data');
+      return;
+    }
+
+    const typedData = data as PaystackVerifyResponse['data'];
+
+    const reference =
+      typeof typedData.reference === 'string' ? typedData.reference : undefined;
+
+    if (!reference) {
+      this._logger.error('Webhook payload missing reference');
+      return;
+    }
 
     try {
       // Idempotency check: Don't process duplicate hooks
-      const existingTx = await this._transactionRepo.findByPaystackRef(
-        reference as string,
-      );
+      const existingTx =
+        await this._transactionRepo.findByPaystackRef(reference);
       if (existingTx) {
         this._logger.log(
           `Transaction ${reference} already processed. Skipping webhook.`,
@@ -298,26 +291,34 @@ export class PaymentService {
         return;
       }
 
-      await this.handleSuccessfulPayment(reference as string, data);
+      await this.handleSuccessfulPayment(reference, typedData);
     } catch (error) {
       this._logger.error(
         `Webhook processing failed for ${reference}: ${(error as Error).message}`,
       );
 
       // Attempt to notify the user if an error occurs
-      const userEmail = data.customer?.email;
+      const userEmail =
+        typeof typedData.customer?.email === 'string'
+          ? typedData.customer.email
+          : undefined;
       if (userEmail) {
+        const customerName =
+          typeof typedData.customer?.first_name === 'string'
+            ? typedData.customer.first_name
+            : 'Agent';
+
         await this.__paymentFailureMailer
           .sendMail({
             email: userEmail,
-            name: data.customer?.first_name || 'Agent',
+            name: customerName,
             reference: reference,
             errorReason:
               'Payment verified, but account update failed. Contact support.',
           })
           .catch((mailErr) =>
             this._logger.error(
-              `Failed to send failure email: ${mailErr.message}`,
+              `Failed to send failure email: ${(mailErr as Error).message}`,
             ),
           );
       }
@@ -326,7 +327,11 @@ export class PaymentService {
 
   private async handleSuccessfulPayment(
     paystackRef: string,
-    data: any,
+    data: {
+      metadata?: { userId?: string; purpose?: TransactionPurpose };
+      customer?: { email?: string; first_name?: string };
+      amount?: number | string;
+    },
   ): Promise<void> {
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose as TransactionPurpose;
@@ -402,17 +407,28 @@ export class PaymentService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      await this._paymentSuccessMailer
-        .sendMail({
-          email: data.customer.email,
-          name: data.customer.first_name || 'Agent',
-          amountGhs: Number(data.amount) / 100,
-          purpose: data.metadata.purpose,
-          reference: paystackRef,
-        })
-        .catch((err) =>
-          this._logger.error(`Failed to send success mail: ${err.message}`),
+      const customerEmail = data.customer?.email;
+      const customerName = data.customer?.first_name || 'Agent';
+
+      if (customerEmail) {
+        await this._paymentSuccessMailer
+          .sendMail({
+            email: customerEmail,
+            name: customerName,
+            amountGhs: Number(data.amount) / 100,
+            purpose,
+            reference: paystackRef,
+          })
+          .catch((err: unknown) =>
+            this._logger.error(
+              `Failed to send success mail: ${(err as Error).message}`,
+            ),
+          );
+      } else {
+        this._logger.log(
+          `Skipping success email for payment ${paystackRef}: missing customer email`,
         );
+      }
 
       this._logger.log(
         `Successfully processed ${purpose} for user ${userId} via ref: ${paystackRef}`,
@@ -429,15 +445,20 @@ export class PaymentService {
   /**
    * Verifies an account number and bank code via Paystack
    */
-  async resolveAccountNumber(accountNumber: string, bankCode: string) {
+  async resolveAccountNumber(
+    accountNumber: string,
+    bankCode: string,
+  ): Promise<unknown> {
     try {
-      const response = await axios.get(
+      const response = await axios.get<unknown>(
         `${this._paystackBaseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
         { headers: this.headers },
       );
       return response.data;
-    } catch (error: any) {
-      this._logger.error(`Account resolution failed: ${error.message}`);
+    } catch (error: unknown) {
+      this._logger.error(
+        `Account resolution failed: ${(error as Error).message}`,
+      );
       throw new BadRequestException(
         'Could not verify bank account details. Please check the number and bank.',
       );
@@ -452,9 +473,9 @@ export class PaymentService {
     settlementBank: string,
     accountNumber: string,
     platformPercentage: number,
-  ) {
+  ): Promise<string> {
     try {
-      const response = await axios.post(
+      const response = await axios.post<PaystackCreateSubaccountResponse>(
         `${this._paystackBaseUrl}/subaccount`,
         {
           business_name: businessName,
@@ -467,9 +488,9 @@ export class PaymentService {
 
       // Return the subaccount_code to be saved in the users table
       return response.data.data.subaccount_code;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this._logger.error(
-        `Subaccount creation failed: ${error.response?.data?.message || error.message}`,
+        `Subaccount creation failed: ${(error as Error).message}`,
       );
       throw new InternalServerErrorException(
         'Failed to setup financial profile with the payment gateway.',
