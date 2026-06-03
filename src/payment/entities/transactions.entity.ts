@@ -39,7 +39,7 @@ export class Transaction {
   @Column({ unique: true })
   reference: string;
 
-  @Column({ name: 'paystack_ref', nullable: true })
+  @Column({ name: 'paystack_ref', unique: true })
   paystackRef: string;
 
   @CreateDateColumn({ name: 'created_at' })
