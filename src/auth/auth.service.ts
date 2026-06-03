@@ -205,6 +205,7 @@ export class AuthService {
         data: {
           accountStatus: AccountStatus.PENDING_PAYMENT,
           authorizationUrl: paystackSession.data.authorization_url,
+          accessCode: paystackSession.data.access_code,
           reference: paystackSession.data.reference,
         },
       };
@@ -454,6 +455,8 @@ export class AuthService {
           message: 'Your registration payment is incomplete.',
           accountStatus: user.accountStatus,
           authorizationUrl: paystackSession.data.authorization_url,
+          accessCode: paystackSession.data.access_code,
+          reference: paystackSession.data.reference,
         });
       }
 
