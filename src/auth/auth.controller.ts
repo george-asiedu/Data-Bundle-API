@@ -198,6 +198,7 @@ export class AuthController {
    * @returns
    */
   @ApiOperation(swaggerVerifyMfaResponse)
+  @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('verify-mfa')
   verifyMfa(@Body(ValidationPipe) body: VerifyMfaDto, @Req() req: Request) {
