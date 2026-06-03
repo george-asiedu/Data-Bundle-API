@@ -335,7 +335,7 @@ export class PaymentService {
   ): Promise<void> {
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose as TransactionPurpose;
-    const amountInPesewas = Number(data.amount);
+    const amountInCedis = Number(data.amount) / 100;
 
     if (!userId || !purpose) {
       throw new BadRequestException('Missing required transaction metadata');
@@ -361,7 +361,7 @@ export class PaymentService {
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.REGISTRATION_FEE,
-            amount: amountInPesewas,
+            amount: amountInCedis,
             balanceAfter: Number(wallet.balance),
             reference: `REG-${Date.now()}`,
             paystackRef,
@@ -377,7 +377,7 @@ export class PaymentService {
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.SUBSCRIPTION_PAYMENT,
-            amount: amountInPesewas,
+            amount: amountInCedis,
             balanceAfter: Number(wallet.balance),
             reference: `SUB-${Date.now()}`,
             paystackRef,
@@ -386,7 +386,7 @@ export class PaymentService {
           wallet,
         );
       } else if (purpose === TransactionPurpose.TOP_UP) {
-        const balanceAfter = Number(wallet.balance) + amountInPesewas;
+        const balanceAfter = Number(wallet.balance) + amountInCedis;
 
         await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
 
@@ -395,7 +395,7 @@ export class PaymentService {
           {
             type: TransactionType.CREDIT,
             purpose: TransactionPurpose.TOP_UP,
-            amount: amountInPesewas,
+            amount: amountInCedis,
             balanceAfter,
             reference: `TOP-UP-${Date.now()}`,
             paystackRef,
