@@ -408,7 +408,7 @@ export class PaymentService {
       await this._queryRunnerExec.commit(queryRunner);
 
       const customerEmail = data.customer?.email;
-      const customerName = data.customer?.first_name || 'Agent';
+      const customerName = user.fullName || 'Agent';
 
       if (customerEmail) {
         await this._paymentSuccessMailer
