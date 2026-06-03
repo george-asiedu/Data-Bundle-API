@@ -57,10 +57,7 @@ export class PaymentController {
     @Body() body: InitializePaymentDto,
     @CurrentUser() user: User,
   ): Promise<unknown> {
-    return this._paymentService.initializeTransaction(
-      body,
-      user.id,
-    ) as Promise<unknown>;
+    return this._paymentService.initializeTransaction(body, user.id);
   }
 
   @UseGuards(AuthGuard)
@@ -75,11 +72,9 @@ export class PaymentController {
     return this._paymentService.initializeTransactionForRegistration(
       body,
       user.id,
-    ) as Promise<unknown>;
+    );
   }
 
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Verify a payment transaction' })
   @HttpCode(HttpStatus.OK)
   @Get('verify/:reference')
@@ -100,7 +95,7 @@ export class PaymentController {
     return this._paymentService.resolveAccountNumber(
       query.accountNumber,
       query.bankCode,
-    ) as Promise<unknown>;
+    );
   }
 
   @UseGuards(AuthGuard)
@@ -145,11 +140,13 @@ export class PaymentController {
         .json({ message: 'Invalid signature' });
     }
 
-    this._paymentService.processWebhookEvent(payload).catch((err: unknown) => {
-      this._logger.error(
-        `Unhandled error in background webhook processor: ${(err as Error).message}`,
-      );
-    });
+    this._paymentService
+      .processWebhookEvent(payload as { event: string; data: unknown })
+      .catch((err: unknown) => {
+        this._logger.error(
+          `Unhandled error in background webhook processor: ${(err as Error).message}`,
+        );
+      });
 
     return res.status(HttpStatus.OK).send('Webhook received');
   }
