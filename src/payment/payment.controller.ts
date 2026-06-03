@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   BadRequestException,
   Body,
@@ -58,8 +56,11 @@ export class PaymentController {
   async initializePayment(
     @Body() body: InitializePaymentDto,
     @CurrentUser() user: User,
-  ) {
-    return this._paymentService.initializeTransaction(body, user.id);
+  ): Promise<unknown> {
+    return this._paymentService.initializeTransaction(
+      body,
+      user.id,
+    ) as Promise<unknown>;
   }
 
   @UseGuards(AuthGuard)
@@ -70,11 +71,11 @@ export class PaymentController {
   async initializeRegistrationPayment(
     @Body() body: InitializePaymentDto,
     @CurrentUser() user: User,
-  ) {
+  ): Promise<unknown> {
     return this._paymentService.initializeTransactionForRegistration(
       body,
       user.id,
-    );
+    ) as Promise<unknown>;
   }
 
   @UseGuards(AuthGuard)
@@ -93,11 +94,13 @@ export class PaymentController {
   @ApiOperation({ summary: 'Verify bank account or MoMo number' })
   @HttpCode(HttpStatus.OK)
   @Get('verify-bank')
-  async verifyBankAccount(@Query(ValidationPipe) query: VerifyBankDto) {
+  async verifyBankAccount(
+    @Query(ValidationPipe) query: VerifyBankDto,
+  ): Promise<unknown> {
     return this._paymentService.resolveAccountNumber(
       query.accountNumber,
       query.bankCode,
-    );
+    ) as Promise<unknown>;
   }
 
   @UseGuards(AuthGuard)
@@ -142,9 +145,9 @@ export class PaymentController {
         .json({ message: 'Invalid signature' });
     }
 
-    this._paymentService.processWebhookEvent(payload).catch((err: any) => {
+    this._paymentService.processWebhookEvent(payload).catch((err: unknown) => {
       this._logger.error(
-        `Unhandled error in background webhook processor: ${err.message}`,
+        `Unhandled error in background webhook processor: ${(err as Error).message}`,
       );
     });
 
