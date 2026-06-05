@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   BadRequestException,
@@ -45,6 +44,7 @@ export class AuthService {
   private readonly _secretKey: string;
   private readonly _oauthSuccessRedirect: string;
   private readonly _oauthFailureRedirect: string;
+  private readonly _frontendUrl: string;
 
   constructor(
     private readonly _userRepo: UserRepository,
@@ -70,6 +70,9 @@ export class AuthService {
     ) as string;
     this._oauthFailureRedirect = this._configService.get<string>(
       'OAUTH_FAILURE_REDIRECT',
+    ) as string;
+    this._frontendUrl = this._configService.get<string>(
+      'FRONTEND_LOCAL_URL',
     ) as string;
   }
 
@@ -696,6 +699,38 @@ export class AuthService {
       await this._userRepo.update(queryRunner, user, {
         lastLoginAt: new Date(),
       });
+
+      if (user.accountStatus === AccountStatus.PENDING_PAYMENT) {
+        const registrationFeeGhs = 1;
+        const paystackSession =
+          await this._paymentService.initializeTransactionForRegistration(
+            { email: user.email, amount: registrationFeeGhs },
+            user.id,
+          );
+
+        await this._queryRunnerExec.commit(queryRunner);
+
+        const frontendBaseUrl =
+          process.env.FRONTEND_URL || 'http://localhost:4200';
+        const paymentUrl = new URL('/complete-registration', frontendBaseUrl);
+
+        paymentUrl.searchParams.append(
+          'access_code',
+          paystackSession.data.access_code,
+        );
+        paymentUrl.searchParams.append(
+          'authorization_url',
+          paystackSession.data.authorization_url,
+        );
+        paymentUrl.searchParams.append(
+          'reference',
+          paystackSession.data.reference,
+        );
+        paymentUrl.searchParams.append('email', user.email);
+
+        return res.redirect(paymentUrl.toString());
+      }
+
       await this._queryRunnerExec.commit(queryRunner);
 
       await this._auditService.logAction(LogAction.LOGIN, user.id, {
@@ -709,13 +744,14 @@ export class AuthService {
       const encryptedAccess = this._encryptionService.encrypt(accessToken);
       const encryptedRefresh = this._encryptionService.encrypt(refreshToken);
 
-      const frontendUrl = req.cookies['oauth_redirect'];
-      res.clearCookie('oauth_redirect');
+      const frontendUrl = this._frontendUrl;
+      const redirectUrl = new URL(this._oauthSuccessRedirect, frontendUrl);
 
-      const successPath = this._oauthSuccessRedirect;
-      const redirectUrl = `${frontendUrl}${successPath}?access_token=${encodeURIComponent(encryptedAccess)}&refresh_token=${encodeURIComponent(encryptedRefresh)}&is_new=${isNew}`;
+      redirectUrl.searchParams.append('access_token', encryptedAccess);
+      redirectUrl.searchParams.append('refresh_token', encryptedRefresh);
+      redirectUrl.searchParams.append('is_new', String(isNew));
 
-      return res.redirect(redirectUrl);
+      return res.redirect(redirectUrl.toString());
     } catch (error: unknown) {
       await this._queryRunnerExec.rollback(queryRunner);
 
@@ -723,9 +759,9 @@ export class AuthService {
         `OAuth login failed for ${profile.provider}: ${(error as Error).message}`,
       );
 
-      const frontendUrl = req.cookies['oauth_redirect'];
-      const failurePath = this._oauthFailureRedirect;
-      return res.redirect(`${frontendUrl}${failurePath}`);
+      const frontendUrl = this._frontendUrl;
+      const failurePath = new URL(this._oauthFailureRedirect, frontendUrl);
+      return res.redirect(failurePath.toString());
     }
   }
 }
