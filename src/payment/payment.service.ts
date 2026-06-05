@@ -133,9 +133,12 @@ export class PaymentService {
     // Idempotency check: Don't process if the transaction log already exists
     const existingTx = await this._transactionRepo.findByPaystackRef(reference);
     if (existingTx) {
+      const userId = existingTx.user.id;
+      const user = userId ? await this._userRepo.find(userId) : null;
+
       return {
         message: 'Transaction already processed successfully.',
-        accountStatus: existingTx.user.accountNumber,
+        accountStatus: user?.accountStatus,
       };
     }
 
