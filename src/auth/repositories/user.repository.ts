@@ -149,7 +149,7 @@ export class UserRepository {
     newUser.role = Role.AGENT;
     newUser.provider = profile.provider;
     newUser.providerId = profile.providerId;
-    newUser.accountStatus = AccountStatus.ACTIVE;
+    newUser.accountStatus = AccountStatus.PENDING_PAYMENT;
 
     const saved = await queryRunner.manager.save(newUser);
     return { user: saved, isNew: true };
