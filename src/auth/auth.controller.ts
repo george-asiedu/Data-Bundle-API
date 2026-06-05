@@ -219,17 +219,7 @@ export class AuthController {
   })
   @Get('google')
   @UseGuards(GoogleOAuthGuard)
-  googleAuth(
-    @Req() _req: Request,
-    @Res() res: Response,
-    @Query('redirect') redirectUrl: string,
-  ) {
-    const target = redirectUrl;
-    res.cookie('oauth_redirect', target, {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 5,
-    });
-  }
+  googleAuth() {}
 
   /**
    * redirect user to Google consent screen
