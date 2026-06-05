@@ -26,6 +26,7 @@ export class TransactionRepository {
 
   async findByPaystackRef(paystackRef: string): Promise<Transaction | null> {
     return await this._getQueryBuilder()
+      .leftJoinAndSelect('transactions.user', 'user')
       .where('transactions.paystackRef = :paystackRef', { paystackRef })
       .getOne();
   }
