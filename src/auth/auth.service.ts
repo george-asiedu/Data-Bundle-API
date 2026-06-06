@@ -696,6 +696,10 @@ export class AuthService {
         profile,
       );
 
+      if (isNew) {
+        await this._walletRepo.add(queryRunner, { balance: 0 }, user);
+      }
+
       await this._userRepo.update(queryRunner, user, {
         lastLoginAt: new Date(),
       });
