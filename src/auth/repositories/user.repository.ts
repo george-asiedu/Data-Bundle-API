@@ -77,6 +77,11 @@ export class UserRepository {
         | 'role'
         | 'lastLoginAt'
         | 'backupCode'
+        | 'businessName'
+        | 'paystackSubaccountCode'
+        | 'settlementBankAccount'
+        | 'accountNumber'
+        | 'apiKey'
       >
     >,
   ) {
@@ -86,7 +91,13 @@ export class UserRepository {
     user.imageLongUrl = data.imageLongUrl ?? user.imageLongUrl;
     user.accountStatus = data.accountStatus ?? user.accountStatus;
     user.role = data.role ?? user.role;
-
+    user.businessName = data.businessName ?? user.businessName;
+    user.paystackSubaccountCode =
+      data.paystackSubaccountCode ?? user.paystackSubaccountCode;
+    user.settlementBankAccount =
+      data.settlementBankAccount ?? user.settlementBankAccount;
+    user.accountNumber = data.accountNumber ?? user.accountNumber;
+    user.apiKey = data.apiKey ?? user.apiKey;
     if (data.lastLoginAt !== undefined) {
       user.lastLoginAt = data.lastLoginAt;
     }
