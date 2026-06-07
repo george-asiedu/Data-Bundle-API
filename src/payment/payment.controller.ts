@@ -9,6 +9,7 @@ import {
   Logger,
   Param,
   Post,
+  Put,
   Query,
   Res,
   UseGuards,
@@ -32,6 +33,9 @@ import {
   VerifyBankDto,
 } from './dto/financial-setup.dto';
 import { Response } from 'express';
+import { Role } from '../auth/auth.types';
+import { RoleGuard } from '../auth/guards/role.guard';
+import { Roles } from '../shared/decorators/role.decorator';
 
 @ApiTags('Payment')
 @Controller('payment')
@@ -110,6 +114,47 @@ export class PaymentController {
     @CurrentUser() user: User,
   ) {
     return this._paymentService.completeAgentFinancialSetup(user.id, payload);
+  }
+
+  /**
+   * Retrieves the filtered list of available Mobile Money and Bank providers in Ghana
+   */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get list of supported settlement providers' })
+  @Get('banks')
+  async getSettlementBanks(): Promise<unknown> {
+    return this._paymentService.getGhanaBanks();
+  }
+
+  /**
+   * Updates an active agent's existing subaccount profile information
+   */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update existing financial profile configurations' })
+  @HttpCode(HttpStatus.OK)
+  @Put('update-financial-setup')
+  async updateAgentFinancialSetup(
+    @Body(ValidationPipe) payload: CompleteFinancialSetupDto,
+    @CurrentUser() user: User,
+  ) {
+    return this._paymentService.updateAgentFinancialSetup(user.id, payload);
+  }
+
+  /**
+   * Admin dashboard metric route to audit all subaccounts active under the primary marketplace account
+   */
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Admin tool to monitor all subaccounts mapped to the provider network',
+  })
+  @Get('admin/subaccounts')
+  async getAllSubaccounts(): Promise<unknown> {
+    return await this._paymentService.getAllPlatformSubaccounts();
   }
 
   /**

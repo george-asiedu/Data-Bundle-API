@@ -566,4 +566,105 @@ export class PaymentService {
       );
     }
   }
+
+  /**
+   * Fetches the complete list of supported banks and mobile money providers in Ghana
+   */
+  async getGhanaBanks(): Promise<any> {
+    try {
+      const response = await axios.get(
+        `${this._paystackBaseUrl}/bank?country=ghana`,
+        { headers: this.headers },
+      );
+      return response.data;
+    } catch (error: unknown) {
+      this._logger.error(
+        `Failed to fetch bank list: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to retrieve settlement providers.',
+      );
+    }
+  }
+
+  /**
+   * Updates an existing Agent's financial subaccount details both on Paystack and locally
+   */
+  async updateAgentFinancialSetup(
+    userId: string,
+    payload: CompleteFinancialSetupDto,
+  ) {
+    let queryRunner: QueryRunner | undefined = undefined;
+
+    try {
+      const user = await this._userRepo.find(userId);
+      if (!user) throw new ApplicationException('User account not found');
+      if (!user.paystackSubaccountCode) {
+        throw new ApplicationException(
+          'No existing financial subaccount profile found to update.',
+        );
+      }
+
+      await this.resolveAccountNumber(payload.accountNumber, payload.bankCode);
+
+      await axios.put(
+        `${this._paystackBaseUrl}/subaccount/${user.paystackSubaccountCode}`,
+        {
+          business_name: payload.businessName,
+          settlement_bank: payload.bankCode,
+          account_number: payload.accountNumber,
+          percentage_charge: 10,
+        },
+        { headers: this.headers },
+      );
+
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      await this._userRepo.update(queryRunner, user, {
+        settlementBankAccount: payload.bankCode,
+        accountNumber: payload.accountNumber,
+        businessName: payload.businessName,
+      });
+      await this._queryRunnerExec.commit(queryRunner);
+
+      this._logger.log(
+        `Financial profile configuration updated for Agent ${userId}`,
+      );
+
+      return {
+        message: 'Financial profile details successfully updated.',
+      };
+    } catch (error: unknown) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
+      if (error instanceof ApplicationException)
+        throw new BadRequestException(error.message);
+
+      this._logger.error(
+        `Failed to update financial profile for ${userId}: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to update financial configuration details.',
+      );
+    }
+  }
+
+  /**
+   * Fetches all registration accounts managed on the platform's Paystack account (Admin only)
+   */
+  async getAllPlatformSubaccounts(): Promise<any> {
+    try {
+      const response = await axios.get(`${this._paystackBaseUrl}/subaccount`, {
+        headers: this.headers,
+      });
+      return response.data;
+    } catch (error: unknown) {
+      this._logger.error(
+        `Admin subaccounts retrieval failed: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to fetch platform subaccounts from payment gateway.',
+      );
+    }
+  }
 }
