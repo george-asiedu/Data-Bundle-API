@@ -209,6 +209,18 @@ export class AuthController {
   }
 
   /**
+   * resend the email otp code if the user did not receive the first email or code is expired
+   * @param {VerifyEmailDto} body
+   * @returns
+   */
+  @ApiOperation(swaggerResendVerificationEmailResponse)
+  @HttpCode(HttpStatus.OK)
+  @Post('resend-mfa-code')
+  resendMfaCode(@Body(ValidationPipe) body: EmailDto) {
+    return this._authService.resendMfaCode(body.email);
+  }
+
+  /**
    * allows for Google OAuth login
    * @returns
    */

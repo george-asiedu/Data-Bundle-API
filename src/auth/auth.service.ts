@@ -504,7 +504,51 @@ export class AuthService {
           'Credentials verified. Please enter the 6-digit code sent to your email.',
         data: {
           mfaToken: this._encryptionService.encrypt(mfaToken),
+          email: user.email,
         },
+      };
+    } catch (error) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+
+      if (error instanceof ApplicationException)
+        throw new BadRequestException(error.message);
+
+      this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Something went wrong');
+    }
+  }
+
+  async resendMfaCode(email: string) {
+    let queryRunner: QueryRunner | undefined = undefined;
+
+    try {
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      const user = await this._userRepo.find(email);
+      if (!user) throw new ApplicationException('User account not found');
+
+      const existingMfaCodes = await this._mfaVerificationRepo.findMany(email);
+      await this._mfaVerificationRepo.destroyMany(
+        queryRunner,
+        existingMfaCodes,
+      );
+
+      const mfaCode = Math.floor(100000 + Math.random() * 900000).toString();
+      await this._mfaVerificationRepo.add(queryRunner, {
+        email,
+        code: mfaCode,
+      });
+
+      await this._mfaMailer.sendMail({
+        email,
+        name: user.fullName ?? 'User',
+        token: mfaCode,
+      });
+
+      await this._queryRunnerExec.commit(queryRunner);
+
+      return {
+        message: 'A new MFA code has been sent to your email.',
       };
     } catch (error) {
       if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
