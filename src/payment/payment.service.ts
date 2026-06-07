@@ -71,7 +71,9 @@ export class PaymentService {
     }
 
     try {
-      const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
+      const frontendUrl =
+        this._configService.get<string>('FRONTEND_LOCAL_URL') ||
+        this._configService.get<string>('FRONTEND_SERVER_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
       const paystackPayload: {
@@ -198,7 +200,9 @@ export class PaymentService {
     };
   }> {
     try {
-      const frontendUrl = this._configService.get<string>('FRONTEND_LOCAL_URL');
+      const frontendUrl =
+        this._configService.get<string>('FRONTEND_LOCAL_URL') ||
+        this._configService.get<string>('FRONTEND_SERVER_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
       const response = await axios.post<{
@@ -354,7 +358,6 @@ export class PaymentService {
       if (!wallet || !user)
         throw new ApplicationException('User or Wallet not found');
 
-      // Route logic based on transaction purpose
       if (purpose === TransactionPurpose.REGISTRATION_FEE) {
         user.accountStatus = AccountStatus.ACTIVE;
         await queryRunner.manager.save(user);
@@ -362,7 +365,7 @@ export class PaymentService {
         await this._transactionRepo.add(
           queryRunner,
           {
-            type: TransactionType.CREDIT,
+            type: TransactionType.DEBIT,
             purpose: TransactionPurpose.REGISTRATION_FEE,
             amount: amountInCedis,
             balanceAfter: Number(wallet.balance),
@@ -378,7 +381,7 @@ export class PaymentService {
         await this._transactionRepo.add(
           queryRunner,
           {
-            type: TransactionType.CREDIT,
+            type: TransactionType.DEBIT,
             purpose: TransactionPurpose.SUBSCRIPTION_PAYMENT,
             amount: amountInCedis,
             balanceAfter: Number(wallet.balance),

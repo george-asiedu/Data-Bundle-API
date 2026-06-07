@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   BadRequestException,
   Injectable,
@@ -311,19 +310,20 @@ export class AuthService {
     email: string,
     clientOrigin: string,
   ): Promise<MessageOnly> {
-    const message = 'Please check your email and password';
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
       queryRunner = await this._queryRunnerExec.getRunner();
 
-      // ensure any existing token attached to the user is first deleted before adding new ones
       const passwordResets = await this._passwordResetRepo.findMany(email);
       await this._passwordResetRepo.destroyMany(queryRunner, passwordResets);
 
       const existingUserWithEmail = await this._userRepo.find(email);
 
-      if (!existingUserWithEmail) throw new ApplicationException(message);
+      if (!existingUserWithEmail)
+        throw new ApplicationException(
+          'No account found associated with this email address.',
+        );
 
       const token = sign(
         { sub: existingUserWithEmail.id },
@@ -346,11 +346,14 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      return { message };
+      return {
+        message: 'Password reset instructions have been sent to your email.',
+      };
     } catch (error) {
       await this._queryRunnerExec.rollback(queryRunner);
 
-      if (error instanceof ApplicationException) return { message };
+      if (error instanceof ApplicationException)
+        return { message: error.message };
 
       this._logger.error((error as Error).message);
 
@@ -399,7 +402,10 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      return { message: 'You have successfully changed your password' };
+      return {
+        message:
+          'Your password has been reset successfully. Please login with your new password.',
+      };
     } catch (error) {
       await this._queryRunnerExec.rollback(queryRunner);
 
@@ -440,7 +446,7 @@ export class AuthService {
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
         });
-        throw new ApplicationException('Invalid email and or password');
+        throw new ApplicationException('Invalid email or password');
       }
 
       if (user.accountStatus === AccountStatus.PENDING_PAYMENT) {
@@ -607,7 +613,7 @@ export class AuthService {
       });
 
       return {
-        message: 'Login successful.',
+        message: 'You are logged-in successfully.',
         data: {
           user,
           accessToken: this._encryptionService.encrypt(accessToken),
@@ -715,7 +721,8 @@ export class AuthService {
         await this._queryRunnerExec.commit(queryRunner);
 
         const frontendBaseUrl =
-          process.env.FRONTEND_URL || 'http://localhost:4200';
+          this._frontendUrl ||
+          this._configService.get<string>('FRONTEND_SERVER_URL');
         const paymentUrl = new URL('/complete-registration', frontendBaseUrl);
 
         paymentUrl.searchParams.append(
@@ -748,7 +755,9 @@ export class AuthService {
       const encryptedAccess = this._encryptionService.encrypt(accessToken);
       const encryptedRefresh = this._encryptionService.encrypt(refreshToken);
 
-      const frontendUrl = this._frontendUrl;
+      const frontendUrl =
+        this._frontendUrl ||
+        this._configService.get<string>('FRONTEND_SERVER_URL');
       const redirectUrl = new URL(this._oauthSuccessRedirect, frontendUrl);
 
       redirectUrl.searchParams.append('access_token', encryptedAccess);
@@ -763,7 +772,9 @@ export class AuthService {
         `OAuth login failed for ${profile.provider}: ${(error as Error).message}`,
       );
 
-      const frontendUrl = this._frontendUrl;
+      const frontendUrl =
+        this._frontendUrl ||
+        this._configService.get<string>('FRONTEND_SERVER_URL');
       const failurePath = new URL(this._oauthFailureRedirect, frontendUrl);
       return res.redirect(failurePath.toString());
     }
