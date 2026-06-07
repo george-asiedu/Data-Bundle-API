@@ -84,7 +84,7 @@ export class AuthService {
       const existingUser = await this._userRepo.find(body.email);
       if (existingUser) throw new ApplicationException('Email already exist');
 
-      const rawBackupCode = `AG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const rawBackupCode = `IDM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       const hashedBackupCode = await this._hashPassword(rawBackupCode);
 
       const { user, emailVerification } =
@@ -496,7 +496,7 @@ export class AuthService {
       const mfaToken = sign(
         { sub: user.id, token: 'mfa-tk' },
         this._secretKey,
-        { algorithm: 'HS256', expiresIn: '5m' },
+        { algorithm: 'HS256', expiresIn: '15m' },
       );
 
       return {
@@ -589,7 +589,7 @@ export class AuthService {
           60000
         : Infinity;
 
-      if (!mfaVerification || codeAgeInMinutes > 5) {
+      if (!mfaVerification || codeAgeInMinutes > 15) {
         throw new ApplicationException('Code is invalid or has expired');
       }
 
@@ -645,7 +645,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid email or backup code.');
       }
 
-      await this._userRepo.update(queryRunner, user, { backupCode: '' });
+      //await this._userRepo.update(queryRunner, user, { backupCode: '' });
       await this._queryRunnerExec.commit(queryRunner);
 
       const accessToken = this._generateAccessToken(user.id);
