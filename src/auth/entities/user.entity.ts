@@ -78,6 +78,9 @@ export class User {
   @Exclude()
   apiKey?: string;
 
+  @Column({ name: 'business_name', nullable: true })
+  businessName?: string;
+
   @Column({ name: 'paystack_subaccount_code', nullable: true })
   @Exclude()
   paystackSubaccountCode?: string; // Stores the Paystack split ID
