@@ -31,6 +31,7 @@ export class PaymentService {
   private readonly _logger = new Logger(PaymentService.name);
   private readonly _paystackSecretKey: string;
   private readonly _paystackBaseUrl: string;
+  private readonly _vendorApiKey: string;
 
   constructor(
     private _configService: ConfigService,
@@ -50,6 +51,9 @@ export class PaymentService {
       'PAYSTACK_BASE_URL',
       'https://paystack.co',
     );
+    this._vendorApiKey = this._configService.get<string>(
+      'PLATFORM_DEFAULT_VENDOR_API_KEY',
+    ) as string;
   }
 
   private get headers() {
@@ -535,6 +539,8 @@ export class PaymentService {
 
       if (payload.vendorApiKey) {
         user.apiKey = this._encryptionService.encrypt(payload.vendorApiKey);
+      } else {
+        user.apiKey = this._encryptionService.encrypt(this._vendorApiKey);
       }
 
       await this._userRepo.update(queryRunner, user, {
