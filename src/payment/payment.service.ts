@@ -478,7 +478,7 @@ export class PaymentService {
     businessName: string,
     settlementBank: string,
     accountNumber: string,
-    platformPercentage: number,
+    platformPercentage: number = 10,
   ): Promise<string> {
     try {
       const response = await axios.post<PaystackCreateSubaccountResponse>(
@@ -515,7 +515,7 @@ export class PaymentService {
 
     try {
       const user = await this._userRepo.find(userId);
-      if (!user) throw new ApplicationException('User not found');
+      if (!user) throw new ApplicationException('User account not found');
 
       if (user.paystackSubaccountCode) {
         throw new ApplicationException('Financial profile already configured.');
@@ -525,32 +525,32 @@ export class PaymentService {
       await this.resolveAccountNumber(payload.accountNumber, payload.bankCode);
 
       // Create the Subaccount on Paystack (e.g., 10% platform fee)
-      const platformFeePercentage = 10;
       const subaccountCode = await this.createSubaccount(
         payload.businessName,
         payload.bankCode,
         payload.accountNumber,
-        platformFeePercentage,
       );
 
       queryRunner = await this._queryRunnerExec.getRunner();
-
-      user.paystackSubaccountCode = subaccountCode;
-      user.settlementBankAccount = payload.bankCode;
-      user.accountNumber = payload.accountNumber;
 
       if (payload.vendorApiKey) {
         user.apiKey = this._encryptionService.encrypt(payload.vendorApiKey);
       }
 
-      await queryRunner.manager.save(user);
+      await this._userRepo.update(queryRunner, user, {
+        paystackSubaccountCode: subaccountCode,
+        settlementBankAccount: payload.bankCode,
+        accountNumber: payload.accountNumber,
+        businessName: payload.businessName,
+        apiKey: user.apiKey,
+      });
       await this._queryRunnerExec.commit(queryRunner);
 
       this._logger.log(`Financial setup completed for Agent ${userId}`);
 
       return {
         message: 'Financial profile successfully created and linked.',
-        data: { subaccountCode },
+        data: { user },
       };
     } catch (error: unknown) {
       if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
