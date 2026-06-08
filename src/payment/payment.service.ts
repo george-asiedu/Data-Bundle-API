@@ -525,9 +525,6 @@ export class PaymentService {
         throw new ApplicationException('Financial profile already configured.');
       }
 
-      // Verify the bank details first to prevent junk data
-      await this.resolveAccountNumber(payload.accountNumber, payload.bankCode);
-
       // Create the Subaccount on Paystack (e.g., 10% platform fee)
       const subaccountCode = await this.createSubaccount(
         payload.businessName,
