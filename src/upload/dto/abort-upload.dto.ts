@@ -7,7 +7,7 @@ export class AbortUploadDto {
   @IsNotEmpty()
   uploadId: string;
 
-  @ApiProperty({ example: 'collection/CL01/098ujhbmnkj809/example.png' })
+  @ApiProperty({ example: 'business_logo/AG-101/a1b2c3_business_logo.png' })
   @IsString()
   @IsNotEmpty()
   key: string;
