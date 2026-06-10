@@ -1,7 +1,7 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { RequestMethod } from '@nestjs/common';
+import { RequestMethod, ClassSerializerInterceptor } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
@@ -17,6 +17,9 @@ async function bootstrap() {
     exclude: [{ path: 'health', method: RequestMethod.GET }],
   });
   app.use(cookieParser());
+
+  // Global interceptor to serialize responses using class-transformer
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT');
