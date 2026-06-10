@@ -17,7 +17,7 @@ export class InitiateUploadDto {
   @Max(10000)
   partCount: number;
 
-  @ApiProperty({ enum: UploadCategory, example: UploadCategory.DOCUMENT })
+  @ApiProperty({ enum: UploadCategory, example: UploadCategory.BUSINESS_LOGO })
   @IsEnum(UploadCategory)
   category: UploadCategory;
 }
