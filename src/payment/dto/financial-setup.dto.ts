@@ -31,11 +31,6 @@ export class CompleteFinancialSetupDto {
   @Length(10, 15)
   accountNumber: string;
 
-  @ApiProperty({ example: 'Kofi Moses' })
-  @IsString()
-  @IsNotEmpty()
-  accountName: string;
-
   @ApiProperty({ example: 'hfbleklgmmelafjbef' })
   @IsString()
   @IsOptional()
