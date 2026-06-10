@@ -91,6 +91,12 @@ export class User {
   @Column({ name: 'account_number', nullable: true })
   accountNumber?: string; // The number of their bank/MoMo account for settlements
 
+  @Column({ name: 'business_logo_long_url', nullable: true })
+  logoLongUrl?: string;
+
+  @Column({ name: 'business_logo_short_url', nullable: true })
+  logoShortUrl?: string;
+
   @Column({
     name: 'commission_percentage',
     type: 'integer',
