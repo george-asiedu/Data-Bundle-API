@@ -17,6 +17,23 @@ const unauthorizedResponse = {
   },
 };
 
+const notFoundResponse = {
+  404: {
+    description: 'Not Found',
+    content: {
+      'application/json': {
+        schema: {
+          example: {
+            message: 'User account profile not found',
+            error: 'Not Found',
+            statusCode: 404,
+          },
+        },
+      },
+    },
+  },
+};
+
 const badRequestResponse = (message: string) => ({
   400: {
     description: 'Bad Request',
@@ -102,6 +119,34 @@ export const swaggerAbortUploadResponse = {
         },
       },
     },
+    ...swaggerServerErrorResponse,
+  },
+};
+
+export const swaggerAddLogo = {
+  summary: 'This endpoint is used to add a logo to a user profile',
+  responses: {
+    200: {
+      description: 'Business logo uploaded successfully',
+      content: {
+        'application/json': {
+          schema: {
+            example: {
+              message: 'Business logo uploaded successfully',
+              data: {
+                key: 'business-logo/IP1001/logo.png',
+                shortUrl:
+                  'https://s3.amazonaws.com/idata-assets/logos/IP1001/logo.png',
+                longUrl:
+                  'https://s3.amazonaws.com/idata-assets/logos/IP1001/logo.png?AWSAccessKeyId=AKIAIOSFODNN7EXAMPLE&Expires=1609459200&Signature=exampleSignature',
+              },
+            },
+          },
+        },
+      },
+    },
+    ...notFoundResponse,
+    ...unauthorizedResponse,
     ...swaggerServerErrorResponse,
   },
 };
