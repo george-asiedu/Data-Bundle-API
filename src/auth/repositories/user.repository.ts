@@ -8,6 +8,7 @@ import {
   Role,
 } from '../auth.types';
 import { User } from '../entities/user.entity';
+import { LogoDto } from '../dto/logo.dto';
 
 @Injectable()
 export class UserRepository {
@@ -82,6 +83,8 @@ export class UserRepository {
         | 'settlementBankAccount'
         | 'accountNumber'
         | 'apiKey'
+        | 'logoShortUrl'
+        | 'logoLongUrl'
       >
     >,
   ) {
@@ -98,6 +101,8 @@ export class UserRepository {
       data.settlementBankAccount ?? user.settlementBankAccount;
     user.accountNumber = data.accountNumber ?? user.accountNumber;
     user.apiKey = data.apiKey ?? user.apiKey;
+    user.logoLongUrl = data.logoLongUrl ?? user.logoLongUrl;
+    user.logoShortUrl = data.logoShortUrl ?? user.logoShortUrl;
     if (data.lastLoginAt !== undefined) {
       user.lastLoginAt = data.lastLoginAt;
     }
@@ -164,5 +169,25 @@ export class UserRepository {
 
     const saved = await queryRunner.manager.save(newUser);
     return { user: saved, isNew: true };
+  }
+
+  public async addProfileLogo(
+    queryRunner: QueryRunner,
+    user: User,
+    data: LogoDto,
+  ): Promise<User> {
+    user.imageShortUrl = data.logoShortUrl;
+    user.imageLongUrl = data.logoLongUrl;
+    return await queryRunner.manager.save(user);
+  }
+
+  public async addBusinessLogo(
+    queryRunner: QueryRunner,
+    user: User,
+    data: LogoDto,
+  ): Promise<User> {
+    user.logoShortUrl = data.logoShortUrl;
+    user.logoLongUrl = data.logoLongUrl;
+    return await queryRunner.manager.save(user);
   }
 }
