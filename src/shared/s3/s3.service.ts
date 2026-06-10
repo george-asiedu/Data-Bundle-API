@@ -186,7 +186,7 @@ export class S3Service {
   /**
    * Generates a structured S3 key scoped to a user and upload category.
    * Format: {category}/{userId}/{uuid}_{sanitized_filename}
-   * e.g. documents/usr-123/a1b2c3_my_document.pdf
+   * e.g. business_logo/usr-123/a1b2c3_business_logo.png
    */
   generateS3Key(
     userId: string,
