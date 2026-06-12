@@ -22,6 +22,10 @@ import { PaymentModule } from '../payment/payment.module';
 import { MfaVerificationRepository } from './repositories/mfa-verification.repository';
 import { MfaVerification } from './entities/mfa-verification.entity';
 import { AuditModule } from '../audit/audit.module';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshTokenRepository } from './repositories/refresh-token.repository';
+import { OAuthExchangeCode } from './entities/oauth-exchange-code.entity';
+import { OAuthExchangeCodeRepository } from './repositories/oauth-exchange-code.repository';
 
 @Module({
   imports: [
@@ -30,6 +34,8 @@ import { AuditModule } from '../audit/audit.module';
       EmailVerification,
       PasswordReset,
       MfaVerification,
+      RefreshToken,
+      OAuthExchangeCode,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     forwardRef(() => PaymentModule),
@@ -50,6 +56,8 @@ import { AuditModule } from '../audit/audit.module';
     MfaVerificationRepository,
     GoogleStrategy,
     GoogleOAuthGuard,
+    RefreshTokenRepository,
+    OAuthExchangeCodeRepository,
   ],
   exports: [UserRepository, EncryptionService],
 })
