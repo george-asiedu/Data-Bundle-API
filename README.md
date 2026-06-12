@@ -1,98 +1,149 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Infinity Data Mall — API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The backend for **Infinity Data Mall**, a platform where agents resell mobile
+data bundles to customers. It handles authentication, agent onboarding,
+wallets and payments (via Paystack), subscriptions, media uploads and audit
+logging.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Built with [NestJS](https://nestjs.com/), PostgreSQL (TypeORM) and TypeScript.
 
-## Description
+## Features
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Authentication & sessions** — email/password registration with email
+  verification, email-OTP MFA, backup-code login, and Google OAuth. Sessions
+  use short-lived access tokens (Bearer) plus rotating refresh tokens stored as
+  httpOnly cookies, with refresh-token reuse detection.
+- **Agents & roles** — `AGENT`, `SUB_AGENT`, `CUSTOMER` and `SUPER_ADMIN`
+  roles, with sub-agent payment splitting routed to a parent agent.
+- **Payments (Paystack)** — registration-fee and top-up flows, transaction
+  verification, webhooks, wallet balances, bank/MoMo resolution, and agent
+  settlement subaccounts.
+- **Subscriptions** — plan activation and lifecycle (trial, active, past-due,
+  expired, canceled).
+- **Uploads** — profile/business media stored on AWS S3 with CloudFront
+  delivery and Lambda-based cache invalidation.
+- **Audit logging** — records sensitive actions with a configurable retention
+  window.
+- **Email** — transactional email through SendGrid.
 
-## Project setup
+## Tech stack
 
-```bash
-$ npm install
-```
+| Concern       | Choice                                 |
+| ------------- | -------------------------------------- |
+| Framework     | NestJS 11                              |
+| Database      | PostgreSQL via TypeORM                 |
+| Auth          | JWT (encrypted), Passport Google OAuth |
+| Payments      | Paystack                               |
+| Storage / CDN | AWS S3, CloudFront, Lambda             |
+| Email         | SendGrid                               |
+| API docs      | Swagger (`/api-docs`)                  |
 
-## Compile and run the project
+## Getting started
 
-```bash
-# development
-$ npm run start
+### Prerequisites
 
-# watch mode
-$ npm run start:dev
+- Node.js 20+
+- A PostgreSQL database
+- Paystack, SendGrid, Google OAuth and AWS credentials
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Setup
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
+cp .env.example .env   # then fill in the values below
+npm run start:dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The API is served under the `/api` prefix (e.g. `http://localhost:5050/api`)
+and interactive docs are available at `/api-docs`.
 
-## Resources
+### Environment variables
 
-Check out a few resources that may come in handy when working with NestJS:
+| Variable | Description |
+| --- | --- |
+| `NODE_ENV` | `development`, `staging` or `production` |
+| `PORT` | Port to listen on (defaults to `5050`) |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `SECRET_KEY` | JWT signing secret |
+| `BUFFER_KEY` | Hex key used to encrypt tokens at rest/in transit |
+| `FRONTEND_LOCAL_URL` / `FRONTEND_SERVER_URL` | SPA origins for redirects/links |
+| `LOCAL_SERVER_URL` / `LIVE_SERVER_URL` | API base URLs (Swagger servers) |
+| `PAYSTACK_SECRET_KEY` | Paystack secret key |
+| `PAYSTACK_BASE_URL` | Paystack API base (defaults to `https://paystack.co`) |
+| `PAYSTACK_TIMEOUT_MS` | Paystack request timeout in ms (defaults to `15000`) |
+| `PLATFORM_DEFAULT_VENDOR_API_KEY` | Default upstream vendor API key |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials |
+| `GOOGLE_CALLBACK_LOCAL_URL` / `GOOGLE_CALLBACK_SERVER_URL` | OAuth callback URLs |
+| `OAUTH_SUCCESS_REDIRECT` / `OAUTH_FAILURE_REDIRECT` | SPA routes after OAuth |
+| `SENDGRID_API_KEY` / `SENDER_EMAIL` / `SENDGRID_NAME` | SendGrid email config |
+| `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials |
+| `AWS_S3_BUCKET` / `AWS_S3_ENDPOINT` | S3 storage |
+| `AWS_CLOUDFRONT_URL` / `AWS_CLOUDFRONT_DISTRIBUTION_ID` / `AWS_INVALIDATION_LAMBDA_NAME` | CDN delivery & invalidation |
+| `RETENTION_DAYS` | Audit-log retention window |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Scripts
 
-## Support
+```bash
+npm run start:dev     # watch mode
+npm run start:prod    # run the compiled build (dist/main)
+npm run build         # compile
+npm run lint          # eslint --fix
+npm run format        # prettier
+npm run test          # unit tests
+npm run test:e2e      # e2e tests
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Authentication flow
 
-## Stay in touch
+1. **Register** → verify email → pay the registration fee (Paystack) → account
+   becomes `ACTIVE`.
+2. **Login** → email-OTP MFA → on success the client receives an access token
+   in the body and a refresh token as an httpOnly cookie.
+3. **Google OAuth** → the callback redirects to the SPA with a single-use
+   `code`; the SPA exchanges it at `POST /auth/oauth/exchange` for tokens
+   (keeping tokens out of the URL).
+4. **Refresh** → `GET /auth/refresh-token` reads the cookie, rotates the refresh
+   token and returns a new access token. Replaying a revoked token revokes the
+   whole token family.
+5. **Logout** → `POST /auth/logout` revokes the session and clears the cookie.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Database migrations
+
+In development and staging the schema is auto-synced (`synchronize: true`), so
+you normally don't touch migrations there. **Production runs with
+`synchronize: false`**, so every production schema change goes through a
+reviewed migration.
+
+Migrations are driven by a standalone DataSource at
+`src/lib/database/data-source.ts` and live in `src/lib/database/migrations/`.
+The `DATABASE_URL` env var selects the target database.
+
+```bash
+# create an empty migration to fill in by hand
+npm run migration:create src/lib/database/migrations/<Name>
+
+# generate a migration by diffing entities against the connected DB
+npm run migration:generate src/lib/database/migrations/<Name>
+
+npm run migration:show     # list applied vs pending
+npm run migration:run      # apply pending migrations
+npm run migration:revert   # roll back the latest migration
+```
+
+### Applying a migration to production
+
+Render does not install devDependencies (`ts-node`), so run migrations from your
+machine with `DATABASE_URL` pointed at the production database:
+
+```bash
+DATABASE_URL="<prod-postgres-url>" npm run migration:run
+```
+
+Only run migrations against the production DB (the one with
+`synchronize: false`). Running them against a dev/staging DB whose tables were
+already created by sync will fail with "table already exists". The first run
+also creates the `migrations` bookkeeping table automatically.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED — private project.
