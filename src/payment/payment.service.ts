@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { ApplicationException } from '../lib/exception/app.exception';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
 import {
@@ -32,6 +33,7 @@ export class PaymentService {
   private readonly _paystackSecretKey: string;
   private readonly _paystackBaseUrl: string;
   private readonly _vendorApiKey: string;
+  private readonly _http: AxiosInstance;
 
   constructor(
     private _configService: ConfigService,
@@ -54,13 +56,18 @@ export class PaymentService {
     this._vendorApiKey = this._configService.get<string>(
       'PLATFORM_DEFAULT_VENDOR_API_KEY',
     ) as string;
-  }
 
-  private get headers() {
-    return {
-      Authorization: `Bearer ${this._paystackSecretKey}`,
-      'Content-Type': 'application/json',
-    };
+    // A single pre-configured client for every Paystack call. The explicit
+    // timeout is critical: without it a slow/hanging gateway request keeps the
+    // HTTP handler open until Render's edge proxy aborts it with a 503.
+    this._http = axios.create({
+      baseURL: this._paystackBaseUrl,
+      timeout: this._configService.get<number>('PAYSTACK_TIMEOUT_MS', 15000),
+      headers: {
+        Authorization: `Bearer ${this._paystackSecretKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
   }
 
   /**
@@ -109,7 +116,7 @@ export class PaymentService {
         paystackPayload.bearer = 'subaccount';
       }
 
-      const response = await axios.post<{
+      const response = await this._http.post<{
         status: boolean;
         message: string;
         data: {
@@ -117,9 +124,7 @@ export class PaymentService {
           access_code: string;
           reference: string;
         };
-      }>(`${this._paystackBaseUrl}/transaction/initialize`, paystackPayload, {
-        headers: this.headers,
-      });
+      }>('/transaction/initialize', paystackPayload);
       return response.data;
     } catch (error: unknown) {
       if (error instanceof ApplicationException)
@@ -136,32 +141,27 @@ export class PaymentService {
    * @param reference - The transaction reference to verify
    */
   async verifyTransaction(reference: string) {
-    // Idempotency check: Don't process if the transaction log already exists
-    const existingTx = await this._transactionRepo.findByPaystackRef(reference);
-    if (existingTx) {
-      const userId = existingTx.user.id;
-      const user = userId ? await this._userRepo.find(userId) : null;
-
-      return {
-        message: 'Transaction already processed successfully.',
-        accountStatus: user?.accountStatus,
-      };
-    }
-
     try {
-      const response = await axios.get<PaystackVerifyResponse>(
-        `${this._paystackBaseUrl}/transaction/verify/${reference}`,
-        { headers: this.headers },
+      // Idempotency check: the webhook may have already processed this payment.
+      const existingTx =
+        await this._transactionRepo.findByPaystackRef(reference);
+      if (existingTx) {
+        return {
+          message: 'Transaction already processed successfully.',
+          accountStatus: existingTx.user?.accountStatus,
+        };
+      }
+
+      const response = await this._http.get<PaystackVerifyResponse>(
+        `/transaction/verify/${encodeURIComponent(reference)}`,
       );
 
       const paystackData = response.data.data;
-      const status = paystackData.status;
 
-      if (status !== 'success') {
+      if (paystackData.status !== 'success') {
         throw new BadRequestException('Transaction was not successful');
       }
 
-      // This automatically triggers database updates, commits, and emails
       await this.handleSuccessfulPayment(reference, paystackData);
 
       const userId = paystackData.metadata?.userId as string;
@@ -174,6 +174,19 @@ export class PaymentService {
     } catch (error: unknown) {
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
+      if (error instanceof HttpException) throw error;
+
+      // A concurrent webhook may have inserted the transaction between our
+      // idempotency check and our own insert. Treat the duplicate as success
+      // rather than surfacing a 500 to the user.
+      if (this._isDuplicateTransaction(error)) {
+        const settled =
+          await this._transactionRepo.findByPaystackRef(reference);
+        return {
+          message: 'Transaction already processed successfully.',
+          accountStatus: settled?.user?.accountStatus,
+        };
+      }
 
       this._logger.error(
         `Verification processing failed for ref ${reference}: ${(error as Error).message}`,
@@ -182,6 +195,16 @@ export class PaymentService {
         'Something went wrong during payment verification',
       );
     }
+  }
+
+  /** Detects a Postgres unique-constraint violation (duplicate paystackRef). */
+  private _isDuplicateTransaction(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === '23505'
+    );
   }
 
   /**
@@ -209,7 +232,7 @@ export class PaymentService {
         this._configService.get<string>('FRONTEND_SERVER_URL');
       const callbackUrl = `${frontendUrl}/payment-success`;
 
-      const response = await axios.post<{
+      const response = await this._http.post<{
         status: boolean;
         message: string;
         data: {
@@ -217,19 +240,15 @@ export class PaymentService {
           access_code: string;
           reference: string;
         };
-      }>(
-        `${this._paystackBaseUrl}/transaction/initialize`,
-        {
-          email: payload.email,
-          amount: payload.amount * 100,
-          callback_url: callbackUrl,
-          metadata: {
-            userId,
-            purpose: TransactionPurpose.REGISTRATION_FEE,
-          },
+      }>('/transaction/initialize', {
+        email: payload.email,
+        amount: payload.amount * 100,
+        callback_url: callbackUrl,
+        metadata: {
+          userId,
+          purpose: TransactionPurpose.REGISTRATION_FEE,
         },
-        { headers: this.headers },
-      );
+      });
       return response.data;
     } catch (error: unknown) {
       const gatewayErrorMessage = (() => {
@@ -460,10 +479,9 @@ export class PaymentService {
     bankCode: string,
   ): Promise<unknown> {
     try {
-      const response = await axios.get<unknown>(
-        `${this._paystackBaseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
-        { headers: this.headers },
-      );
+      const response = await this._http.get<unknown>('/bank/resolve', {
+        params: { account_number: accountNumber, bank_code: bankCode },
+      });
       return response.data;
     } catch (error: unknown) {
       this._logger.error(
@@ -485,15 +503,14 @@ export class PaymentService {
     platformPercentage: number = 10,
   ): Promise<string> {
     try {
-      const response = await axios.post<PaystackCreateSubaccountResponse>(
-        `${this._paystackBaseUrl}/subaccount`,
+      const response = await this._http.post<PaystackCreateSubaccountResponse>(
+        '/subaccount',
         {
           business_name: businessName,
           settlement_bank: settlementBank,
           account_number: accountNumber,
           percentage_charge: platformPercentage,
         },
-        { headers: this.headers },
       );
 
       // Return the subaccount_code to be saved in the users table
@@ -575,10 +592,9 @@ export class PaymentService {
    */
   async getGhanaBanks(): Promise<any> {
     try {
-      const response = await axios.get(
-        `${this._paystackBaseUrl}/bank?country=ghana`,
-        { headers: this.headers },
-      );
+      const response = await this._http.get('/bank', {
+        params: { country: 'ghana' },
+      });
       return response.data;
     } catch (error: unknown) {
       this._logger.error(
@@ -610,16 +626,12 @@ export class PaymentService {
 
       await this.resolveAccountNumber(payload.accountNumber, payload.bankCode);
 
-      await axios.put(
-        `${this._paystackBaseUrl}/subaccount/${user.paystackSubaccountCode}`,
-        {
-          business_name: payload.businessName,
-          settlement_bank: payload.bankCode,
-          account_number: payload.accountNumber,
-          percentage_charge: 10,
-        },
-        { headers: this.headers },
-      );
+      await this._http.put(`/subaccount/${user.paystackSubaccountCode}`, {
+        business_name: payload.businessName,
+        settlement_bank: payload.bankCode,
+        account_number: payload.accountNumber,
+        percentage_charge: 10,
+      });
 
       queryRunner = await this._queryRunnerExec.getRunner();
 
@@ -657,9 +669,7 @@ export class PaymentService {
    */
   async getAllPlatformSubaccounts(): Promise<any> {
     try {
-      const response = await axios.get(`${this._paystackBaseUrl}/subaccount`, {
-        headers: this.headers,
-      });
+      const response = await this._http.get('/subaccount');
       return response.data;
     } catch (error: unknown) {
       this._logger.error(
