@@ -17,6 +17,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -38,14 +39,63 @@ import { EmailDto } from './dto/email.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { LoginDto, LoginWithCodeDto } from './dto/login.dto';
 import { AuthGuard } from './guards/auth.guard';
-import { Request, Response } from 'express';
+import { CookieOptions, Request, Response } from 'express';
 import { OAuthProfile } from './auth.types';
 import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
+import { OAuthExchangeDto } from './dto/oauth-exchange.dto';
+
+const REFRESH_COOKIE_NAME = 'refresh_token';
+const REFRESH_COOKIE_MAX_AGE = 12 * 60 * 60 * 1000; // 12h, matches token TTL
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly _authService: AuthService) {}
+  // The refresh token is the only long-lived credential, so it lives in an
+  // httpOnly cookie scoped to the auth routes (refresh + logout) and never
+  // reaches JavaScript. Cross-site delivery (SPA and API on different domains)
+  // requires SameSite=None + Secure — but Secure cookies are dropped over plain
+  // HTTP, so for local development we fall back to a Lax, non-Secure cookie.
+  private readonly _isProd: boolean;
+  private readonly _refreshCookieOptions: CookieOptions;
+
+  constructor(
+    private readonly _authService: AuthService,
+    private readonly _configService: ConfigService,
+  ) {
+    this._isProd = this._configService.get<string>('NODE_ENV') === 'production';
+    this._refreshCookieOptions = {
+      httpOnly: true,
+      secure: this._isProd,
+      sameSite: this._isProd ? 'none' : 'lax',
+      path: '/api/auth',
+    };
+  }
+
+  private _setRefreshCookie(res: Response, token: string): void {
+    res.cookie(REFRESH_COOKIE_NAME, token, {
+      ...this._refreshCookieOptions,
+      maxAge: REFRESH_COOKIE_MAX_AGE,
+    });
+  }
+
+  private _clearRefreshCookie(res: Response): void {
+    res.clearCookie(REFRESH_COOKIE_NAME, this._refreshCookieOptions);
+  }
+
+  /**
+   * Moves the refresh token out of a session response body and into the
+   * httpOnly cookie, so it is never exposed to the SPA.
+   */
+  private _issueRefreshCookie(
+    res: Response,
+    payload: { data?: { token?: { refreshToken?: string } } },
+  ): void {
+    const token = payload.data?.token?.refreshToken;
+    if (token) {
+      this._setRefreshCookie(res, token);
+      delete payload.data!.token!.refreshToken;
+    }
+  }
 
   /**
    * ensures a user can create an account
@@ -185,11 +235,14 @@ export class AuthController {
   @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('login-with-backup-code')
-  loginWithBackupCode(
+  async loginWithBackupCode(
     @Body(ValidationPipe) body: LoginWithCodeDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this._authService.loginWithBackupCode(body, req);
+    const result = await this._authService.loginWithBackupCode(body, req);
+    this._issueRefreshCookie(res, result);
+    return result;
   }
 
   /**
@@ -201,11 +254,17 @@ export class AuthController {
   @UseInterceptors(ClassSerializerInterceptor)
   @HttpCode(HttpStatus.OK)
   @Post('verify-mfa')
-  verifyMfa(@Body(ValidationPipe) body: VerifyMfaDto, @Req() req: Request) {
+  async verifyMfa(
+    @Body(ValidationPipe) body: VerifyMfaDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     if (!body.mfaToken || !body.code) {
       throw new BadRequestException('Token and code are required');
     }
-    return this._authService.verifyMfa(body, req);
+    const result = await this._authService.verifyMfa(body, req);
+    this._issueRefreshCookie(res, result);
+    return result;
   }
 
   /**
@@ -248,7 +307,27 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const profile = req.user as OAuthProfile;
-    return await this._authService.handleOAuthLogin(profile, req, res);
+    return await this._authService.handleOAuthLogin(profile, res);
+  }
+
+  /**
+   * Exchanges the single-use OAuth code from the callback redirect for the
+   * session tokens. Keeps tokens out of the redirect URL.
+   */
+  @ApiOperation({
+    summary: 'Exchange a one-time OAuth code for session tokens',
+    description:
+      'The SPA posts the `code` returned on the OAuth callback redirect and receives the user profile and tokens in the response body.',
+  })
+  @HttpCode(HttpStatus.OK)
+  @Post('oauth/exchange')
+  async exchangeOAuthCode(
+    @Body(ValidationPipe) body: OAuthExchangeDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this._authService.exchangeOAuthCode(body.code);
+    this._issueRefreshCookie(res, result);
+    return result;
   }
 
   /**
@@ -274,11 +353,35 @@ export class AuthController {
    */
   @ApiOperation(swaggerRefreshAccessTokenResponse)
   @Get('refresh-token')
-  refreshAccessToken(@Req() req: Request) {
-    const refreshToken = req.headers['ref-tk'] as string;
+  async refreshAccessToken(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = (req.cookies as Record<string, string> | undefined)?.[
+      REFRESH_COOKIE_NAME
+    ];
 
     if (!refreshToken) throw new UnauthorizedException('Access denied');
 
-    return this._authService.refreshAccessToken(refreshToken);
+    const result = await this._authService.refreshAccessToken(refreshToken);
+
+    // Rotation: replace the cookie with the freshly minted refresh token and
+    // keep only the new access token in the body.
+    this._setRefreshCookie(res, result.data.refreshToken);
+    return { data: { token: result.data.token } };
+  }
+
+  /**
+   * Revokes the refresh-token family and clears the cookie.
+   */
+  @ApiOperation({ summary: 'Log out and revoke the current session' })
+  @HttpCode(HttpStatus.OK)
+  @Post('logout')
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = (req.cookies as Record<string, string> | undefined)?.[
+      REFRESH_COOKIE_NAME
+    ];
+    this._clearRefreshCookie(res);
+    return this._authService.logout(refreshToken);
   }
 }
