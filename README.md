@@ -109,40 +109,60 @@ npm run test:e2e      # e2e tests
 
 ## Database migrations
 
-In development and staging the schema is auto-synced (`synchronize: true`), so
-you normally don't touch migrations there. **Production runs with
-`synchronize: false`**, so every production schema change goes through a
-reviewed migration.
-
-Migrations are driven by a standalone DataSource at
-`src/lib/database/data-source.ts` and live in `src/lib/database/migrations/`.
-The `DATABASE_URL` env var selects the target database.
+The schema is owned entirely by migrations in **every** environment
+(`synchronize` is off everywhere). On boot the app applies any pending
+migrations automatically (`migrationsRun: true`), so a deploy is also a
+migration. Migrations live in `src/lib/database/migrations/` and are also
+runnable via the CLI through the standalone DataSource at
+`src/lib/database/data-source.ts` (the `DATABASE_URL` env var selects the
+target database).
 
 ```bash
-# create an empty migration to fill in by hand
-npm run migration:create src/lib/database/migrations/<Name>
-
 # generate a migration by diffing entities against the connected DB
 npm run migration:generate src/lib/database/migrations/<Name>
+
+# create an empty migration to fill in by hand
+npm run migration:create src/lib/database/migrations/<Name>
 
 npm run migration:show     # list applied vs pending
 npm run migration:run      # apply pending migrations
 npm run migration:revert   # roll back the latest migration
 ```
 
-### Applying a migration to production
+Migrations are written to be idempotent (`CREATE TABLE IF NOT EXISTS`,
+`ADD VALUE IF NOT EXISTS`, guarded `ALTER`s) so the same set applies safely to
+databases that were originally built by the old `synchronize` behaviour as well
+as to fresh ones.
 
-Render does not install devDependencies (`ts-node`), so run migrations from your
-machine with `DATABASE_URL` pointed at the production database:
+### Running migrations manually against a remote DB
+
+Render does not install devDependencies (`ts-node`), so to run the CLI against a
+managed database, do it from your machine with `DATABASE_URL` pointed at it
+(SSL is on by default for managed Postgres):
 
 ```bash
-DATABASE_URL="<prod-postgres-url>" npm run migration:run
+DATABASE_URL="<postgres-url>" npm run migration:run
 ```
 
-Only run migrations against the production DB (the one with
-`synchronize: false`). Running them against a dev/staging DB whose tables were
-already created by sync will fail with "table already exists". The first run
-also creates the `migrations` bookkeeping table automatically.
+For a **local** database (e.g. when generating a baseline), disable SSL:
+
+```bash
+DB_SSL=false DATABASE_URL="postgres://localhost:5432/idm" npm run migration:run
+```
+
+### Provisioning a brand-new database
+
+The existing dev and production databases already contain the core tables, so
+there is no baseline migration for them — the tracked migrations only carry the
+incremental changes. To stand up a **fresh** database from nothing, first
+generate a baseline of the full current schema against an empty Postgres, commit
+it as the earliest migration, then let `migration:run` build everything:
+
+```bash
+# point at an EMPTY local database
+DB_SSL=false DATABASE_URL="postgres://localhost:5432/empty" \
+  npm run migration:generate src/lib/database/migrations/InitialSchema
+```
 
 ## License
 
