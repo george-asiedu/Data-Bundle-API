@@ -10,12 +10,14 @@ import { TransactionRepository } from './repositories/transaction.repository';
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Wallet, Transaction]),
     forwardRef(() => AuthModule),
     SubscriptionModule,
+    forwardRef(() => AuditModule),
   ],
   providers: [
     PaymentService,
