@@ -3,6 +3,7 @@ import { DataSource, QueryRunner } from 'typeorm';
 import { Transaction } from '../entities/transactions.entity';
 import { User } from '../../auth/entities/user.entity';
 import { Wallet } from '../entities/wallet.entity';
+import { Paginator } from 'src/shared/services/paginator.provider';
 
 @Injectable()
 export class TransactionRepository {
@@ -29,6 +30,26 @@ export class TransactionRepository {
       .leftJoinAndSelect('transactions.user', 'user')
       .where('transactions.paystackRef = :paystackRef', { paystackRef })
       .getOne();
+  }
+
+  async find(value: string): Promise<Transaction | null> {
+    return this._getQueryBuilder()
+      .where('id=:value')
+      .orWhere('reference=:value')
+      .setParameters({ value })
+      .getOne();
+  }
+
+  public async paginate(
+    paginator: Paginator,
+    userId: string,
+  ): Promise<Array<Transaction>> {
+    return await this._getQueryBuilder()
+      .where('transactions.user = :userId', { userId })
+      .orderBy('transactions.createdAt', 'DESC')
+      .take(paginator.perPage)
+      .skip(paginator.page * paginator.perPage)
+      .getMany();
   }
 
   async add(
