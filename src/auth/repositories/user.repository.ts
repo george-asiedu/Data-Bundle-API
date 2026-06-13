@@ -100,6 +100,7 @@ export class UserRepository {
     user.settlementBankAccount =
       data.settlementBankAccount ?? user.settlementBankAccount;
     user.accountNumber = data.accountNumber ?? user.accountNumber;
+    user.backupCode = data.backupCode ?? user.backupCode;
     user.apiKey = data.apiKey ?? user.apiKey;
     user.logoLongUrl = data.logoLongUrl ?? user.logoLongUrl;
     user.logoShortUrl = data.logoShortUrl ?? user.logoShortUrl;
