@@ -11,7 +11,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class CreateAuthSessionTables1749700000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "refresh_tokens" (
+      CREATE TABLE IF NOT EXISTS "refresh_tokens" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "user_id" character varying NOT NULL,
         "token_hash" character varying NOT NULL,
@@ -25,11 +25,11 @@ export class CreateAuthSessionTables1749700000000 implements MigrationInterface 
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_refresh_tokens_user_id" ON "refresh_tokens" ("user_id")
+      CREATE INDEX IF NOT EXISTS "IDX_refresh_tokens_user_id" ON "refresh_tokens" ("user_id")
     `);
 
     await queryRunner.query(`
-      CREATE TABLE "oauth_exchange_codes" (
+      CREATE TABLE IF NOT EXISTS "oauth_exchange_codes" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "code_hash" character varying NOT NULL,
         "user_id" character varying NOT NULL,
@@ -44,8 +44,10 @@ export class CreateAuthSessionTables1749700000000 implements MigrationInterface 
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE "oauth_exchange_codes"`);
-    await queryRunner.query(`DROP INDEX "IDX_refresh_tokens_user_id"`);
-    await queryRunner.query(`DROP TABLE "refresh_tokens"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "oauth_exchange_codes"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_refresh_tokens_user_id"`,
+    );
+    await queryRunner.query(`DROP TABLE IF EXISTS "refresh_tokens"`);
   }
 }
