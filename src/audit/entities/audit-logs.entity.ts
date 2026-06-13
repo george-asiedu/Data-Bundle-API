@@ -13,6 +13,7 @@ import { LogAction } from '../log-action.types';
 @Entity('audit_logs')
 @Index(['action', 'createdAt'])
 @Index('IDX_audit_logs_user_created', ['user', 'createdAt'])
+@Index('IDX_audit_logs_resource', ['resourceType', 'resourceId'])
 export class AuditLogs {
   @PrimaryColumn()
   id: string;
@@ -52,6 +53,6 @@ export class AuditLogs {
   @Column({ name: 'duration_ms', type: 'int', nullable: true })
   durationMs: number | null;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
