@@ -3,6 +3,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectsCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -172,6 +173,30 @@ export class S3Service {
       );
     } catch (error) {
       this.handleError(error, 'deleting multiple objects from');
+    }
+  }
+
+  /**
+   * Uploads an in-memory object (e.g. an audit-log archive) to S3 in a single
+   * request. Use for small/medium payloads, not large file streams.
+   */
+  async putObject(
+    key: string,
+    body: string | Buffer,
+    contentType = 'application/octet-stream',
+  ): Promise<void> {
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+        }),
+      );
+      this.logger.log(`Uploaded object to S3: ${key}`);
+    } catch (error) {
+      this.handleError(error, `uploading object ${key} to`);
     }
   }
 
