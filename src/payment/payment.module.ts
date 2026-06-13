@@ -12,6 +12,7 @@ import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 import { AuditModule } from '../audit/audit.module';
 import { TransactionsService } from './transactions.service';
+import { TransactionsController } from './transactions.controller';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { TransactionsService } from './transactions.service';
     PaymentSuccessMailer,
     TransactionsService,
   ],
-  controllers: [PaymentController],
+  controllers: [PaymentController, TransactionsController],
   exports: [
     PaymentService,
     WalletRepository,
