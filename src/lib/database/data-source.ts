@@ -15,7 +15,7 @@ export const AppDataSource = new DataSource({
   migrations: ['src/lib/database/migrations/*.ts'],
   migrationsTableName: 'migrations',
   synchronize: false,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  // Managed Postgres (Supabase/Render) requires SSL; a local DB used for
+  // generating migrations does not. Opt out with DB_SSL=false.
+  ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
 });
