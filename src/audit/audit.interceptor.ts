@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { Request } from 'express';
-import { extractMetadata, resolveAction } from './resolve-action.utils';
+import { buildAuditContext, resolveAction } from './resolve-action.utils';
 import { AuditService } from './audit.service';
 import { User } from '../auth/entities/user.entity';
 
@@ -36,6 +36,7 @@ export class AuditInterceptor implements NestInterceptor {
           const statusCode = http.getResponse<{ statusCode: number }>()
             .statusCode;
           const durationMs = Date.now() - start;
+          const ctx = buildAuditContext(action, req, responseBody);
 
           // Fire and forget — never await, never blocks the response
           void this._auditService.logFromRequest(
@@ -46,7 +47,9 @@ export class AuditInterceptor implements NestInterceptor {
               durationMs,
               ipAddress: ip,
               userAgent: ua,
-              metadata: extractMetadata(action, req, responseBody),
+              resourceType: ctx.resourceType,
+              resourceId: ctx.resourceId,
+              metadata: ctx.metadata,
             },
             user,
           );
@@ -54,6 +57,8 @@ export class AuditInterceptor implements NestInterceptor {
         error: (error: unknown) => {
           const action = resolveAction(method, path);
           if (!action) return;
+
+          const ctx = buildAuditContext(action, req, undefined);
 
           // Log failures too — useful for detecting repeated 401s, 403s, etc.
           void this._auditService.logFromRequest(
@@ -64,7 +69,9 @@ export class AuditInterceptor implements NestInterceptor {
               durationMs: Date.now() - start,
               ipAddress: ip,
               userAgent: ua,
-              metadata: { error: (error as Error).message },
+              resourceType: ctx.resourceType,
+              resourceId: ctx.resourceId,
+              metadata: { ...ctx.metadata, error: (error as Error).message },
             },
             user,
           );
