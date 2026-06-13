@@ -30,7 +30,7 @@ export class RefreshToken {
 
   // The hash of the token that superseded this one during rotation. Used to
   // trace a stolen-token reuse back through the chain.
-  @Column({ name: 'replaced_by_hash', nullable: true })
+  @Column({ name: 'replaced_by_hash', type: 'varchar', nullable: true })
   replacedByHash?: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
