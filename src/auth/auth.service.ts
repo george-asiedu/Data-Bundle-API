@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -36,9 +37,17 @@ import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { EmailDto } from './dto/email.dto';
 import { LogAction } from '../audit/log-action.types';
 import { AuditService } from '../audit/audit.service';
+import { RefreshTokenRepository } from './repositories/refresh-token.repository';
+import { OAuthExchangeCodeRepository } from './repositories/oauth-exchange-code.repository';
+import * as crypto from 'node:crypto';
 
 @Injectable()
 export class AuthService {
+  // Refresh tokens live for 12h; OAuth exchange codes are single-use and expire
+  // in 2 minutes — just long enough for the SPA to complete the redirect.
+  private static readonly REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
+  private static readonly OAUTH_CODE_TTL_MS = 2 * 60 * 1000;
+
   private readonly _logger = new Logger(AuthService.name);
   private readonly _secretKey: string;
   private readonly _oauthSuccessRedirect: string;
@@ -62,6 +71,8 @@ export class AuthService {
     private readonly _mfaMailer: MfaMailer,
     private readonly _mfaVerificationRepo: MfaVerificationRepository,
     private readonly _auditService: AuditService,
+    private readonly _refreshTokenRepo: RefreshTokenRepository,
+    private readonly _oauthCodeRepo: OAuthExchangeCodeRepository,
   ) {
     this._secretKey = this._configService.get('SECRET_KEY') as string;
     this._oauthSuccessRedirect = this._configService.get<string>(
@@ -84,7 +95,7 @@ export class AuthService {
       const existingUser = await this._userRepo.find(body.email);
       if (existingUser) throw new ApplicationException('Email already exist');
 
-      const rawBackupCode = `IDM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const rawBackupCode = this._generateBackupCode();
       const hashedBackupCode = await this._hashPassword(rawBackupCode);
 
       const { user, emailVerification } =
@@ -103,6 +114,10 @@ export class AuthService {
       });
 
       await this._queryRunnerExec.commit(queryRunner);
+
+      this._audit(LogAction.REGISTER, user.id, {
+        metadata: { email: user.email },
+      });
 
       return {
         message:
@@ -154,6 +169,17 @@ export class AuthService {
     return await hash(password, salt);
   }
 
+  /**
+   * Generates a single-use MFA backup code with ~80 bits of cryptographic
+   * entropy, grouped for readability (e.g. IDM-3F9A-...-...). The raw value is
+   * shown to the user once; only its bcrypt hash is ever stored.
+   */
+  private _generateBackupCode(): string {
+    const hex = crypto.randomBytes(10).toString('hex').toUpperCase();
+    const groups = hex.match(/.{1,4}/g) ?? [hex];
+    return `IDM-${groups.join('-')}`;
+  }
+
   async verifyEmail(
     body: VerifyEmailDto,
     clientOrigin: string,
@@ -200,6 +226,10 @@ export class AuthService {
       });
 
       await this._queryRunnerExec.commit(queryRunner);
+
+      this._audit(LogAction.EMAIL_VERIFIED, existingUser.id, {
+        metadata: { email: existingUser.email },
+      });
 
       return {
         message:
@@ -346,6 +376,14 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
+      this._audit(
+        LogAction.PASSWORD_RESET_REQUESTED,
+        existingUserWithEmail.id,
+        {
+          metadata: { email: existingUserWithEmail.email },
+        },
+      );
+
       return {
         message: 'Password reset instructions have been sent to your email.',
       };
@@ -402,6 +440,10 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
+      this._audit(LogAction.PASSWORD_RESET, existingUserWithEmail.id, {
+        metadata: { email: existingUserWithEmail.email },
+      });
+
       return {
         message:
           'Your password has been reset successfully. Please login with your new password.',
@@ -441,10 +483,9 @@ export class AuthService {
       const samePassword = await compare(body.password, hashedPassword);
 
       if (!user || !samePassword) {
-        await this._auditService.logAction(LogAction.LOGIN_FAILED, null, {
+        this._audit(LogAction.LOGIN_FAILED, user?.id ?? null, {
+          req,
           metadata: { email: body.email },
-          ipAddress: req.ip,
-          userAgent: req.headers['user-agent'],
         });
         throw new ApplicationException('Invalid email or password');
       }
@@ -493,6 +534,11 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
+      this._audit(LogAction.LOGIN_INITIATED, user.id, {
+        req,
+        metadata: { email: user.email },
+      });
+
       const mfaToken = sign(
         { sub: user.id, token: 'mfa-tk' },
         this._secretKey,
@@ -512,6 +558,8 @@ export class AuthService {
 
       if (error instanceof ApplicationException)
         throw new BadRequestException(error.message);
+
+      if (error instanceof HttpException) throw error;
 
       this._logger.error((error as Error).message);
       throw new InternalServerErrorException('Something went wrong');
@@ -602,12 +650,11 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      const accessToken = this._generateAccessToken(user.id);
-      const refreshToken = this._generateRefreshToken(user.id);
+      const session = await this._issueSession(user.id);
 
-      await this._auditService.logAction(LogAction.LOGIN, user.id, {
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+      this._audit(LogAction.LOGIN, user.id, {
+        req,
+        metadata: { method: 'mfa' },
       });
 
       return {
@@ -615,8 +662,8 @@ export class AuthService {
         data: {
           user,
           token: {
-            accessToken: this._encryptionService.encrypt(accessToken),
-            refreshToken: this._encryptionService.encrypt(refreshToken),
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
           },
         },
       };
@@ -636,32 +683,43 @@ export class AuthService {
 
     try {
       const user = await this._userRepo.find(body.email);
-      if (!user || user.backupCode !== body.backupCode) {
-        await this._auditService.logAction(LogAction.LOGIN_FAILED, null, {
-          metadata: { email: body.email },
-          ipAddress: req.ip,
-          userAgent: req.headers['user-agent'],
+      const validBackupCode = await compare(
+        body.backupCode,
+        user?.backupCode ?? '',
+      );
+      if (!user || !validBackupCode) {
+        this._audit(LogAction.LOGIN_FAILED, user?.id ?? null, {
+          req,
+          metadata: { email: body.email, method: 'backup_code' },
         });
         throw new UnauthorizedException('Invalid email or backup code.');
       }
 
-      //await this._userRepo.update(queryRunner, user, { backupCode: '' });
+      // Rotate the backup code: a code is single-use, so issue a fresh one and
+      // store its hash. The new raw code is returned once for the user to save.
+      const newRawBackupCode = this._generateBackupCode();
+      await this._userRepo.update(queryRunner, user, {
+        backupCode: await this._hashPassword(newRawBackupCode),
+      });
       await this._queryRunnerExec.commit(queryRunner);
 
-      const accessToken = this._generateAccessToken(user.id);
-      const refreshToken = this._generateRefreshToken(user.id);
+      const session = await this._issueSession(user.id);
 
-      await this._auditService.logAction(LogAction.LOGIN, user.id, {
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+      this._audit(LogAction.LOGIN, user.id, {
+        req,
+        metadata: { method: 'backup_code' },
       });
 
       return {
-        message: 'You are logged-in successfully.',
+        message:
+          'You are logged-in successfully. Save your new backup code — it replaces the one you just used.',
         data: {
           user,
-          accessToken: this._encryptionService.encrypt(accessToken),
-          refreshToken: this._encryptionService.encrypt(refreshToken),
+          backupCode: newRawBackupCode,
+          token: {
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+          },
         },
       };
     } catch (error) {
@@ -687,55 +745,163 @@ export class AuthService {
     );
   }
 
-  private _generateRefreshToken(id: string): string {
-    return sign(
-      {
-        sub: id,
-        token: 'ref-tk',
-      },
-      this._secretKey,
-      {
-        algorithm: 'HS256',
-        expiresIn: '12h',
-      },
-    );
+  private _sha256(value: string): string {
+    return crypto.createHash('sha256').update(value).digest('hex');
+  }
+
+  /**
+   * Records an auth event against the acting user. Auth routes are
+   * unauthenticated (no req.user), so we log the user here where the identity is
+   * known. Fire-and-forget — auditing must never block or fail the request.
+   */
+  private _audit(
+    action: LogAction,
+    userId: string | null,
+    opts?: { req?: Request; metadata?: Record<string, unknown> },
+  ): void {
+    void this._auditService.logAction(action, userId, {
+      resourceType: userId ? 'user' : null,
+      resourceId: userId,
+      ipAddress: opts?.req?.ip ?? null,
+      userAgent: opts?.req?.headers['user-agent'] ?? null,
+      metadata: opts?.metadata ?? null,
+    });
+  }
+
+  /**
+   * Mints an access token plus a persisted, rotatable refresh token. The raw
+   * refresh secret is opaque and high-entropy; only its hash is stored, and
+   * both tokens are returned encrypted for transport, preserving the existing
+   * client contract.
+   */
+  private async _issueSession(userId: string): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    refreshTokenHash: string;
+  }> {
+    const rawRefresh = crypto.randomBytes(48).toString('hex');
+    const refreshTokenHash = this._sha256(rawRefresh);
+
+    await this._refreshTokenRepo.create({
+      userId,
+      tokenHash: refreshTokenHash,
+      expiresAt: new Date(Date.now() + AuthService.REFRESH_TTL_MS),
+    });
+
+    return {
+      accessToken: this._encryptionService.encrypt(
+        this._generateAccessToken(userId),
+      ),
+      refreshToken: this._encryptionService.encrypt(rawRefresh),
+      refreshTokenHash,
+    };
   }
 
   async refreshAccessToken(
     refreshToken: string,
-  ): Promise<{ data: { token: string } }> {
+  ): Promise<{ data: { token: string; refreshToken: string } }> {
+    let rawToken: string;
     try {
-      const decryptedRefreshToken =
-        this._encryptionService.decrypt(refreshToken);
-      const result = verify(decryptedRefreshToken, this._secretKey, {
-        algorithms: ['HS256'],
-      }) as unknown as { sub: string; token: string };
-
-      if (!result.token || result.token !== 'ref-tk')
-        throw new ApplicationException('Access denied');
-
-      const user = await this._userRepo.find(result.sub);
-
-      if (!user) throw new ApplicationException('Access denied');
-
-      return {
-        data: {
-          token: this._encryptionService.encrypt(
-            this._generateAccessToken(user.id),
-          ),
-        },
-      };
-    } catch (error) {
-      if (error instanceof ApplicationException)
-        throw new UnauthorizedException(error.message);
-
-      this._logger.error((error as Error).message);
-
-      throw new InternalServerErrorException('Something went wrong');
+      rawToken = this._encryptionService.decrypt(refreshToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
+
+    const stored = await this._refreshTokenRepo.findByHash(
+      this._sha256(rawToken),
+    );
+
+    if (!stored)
+      throw new UnauthorizedException('Invalid or expired refresh token');
+
+    // Reuse detection: presenting an already-revoked token means it was
+    // captured. Burn the whole family so neither holder can continue.
+    if (stored.revokedAt) {
+      await this._refreshTokenRepo.revokeAllForUser(stored.userId);
+      this._logger.warn(
+        `Refresh token reuse detected for user ${stored.userId}; all sessions revoked`,
+      );
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    if (stored.expiresAt.getTime() < Date.now())
+      throw new UnauthorizedException('Invalid or expired refresh token');
+
+    const user = await this._userRepo.find(stored.userId);
+    if (!user)
+      throw new UnauthorizedException('Invalid or expired refresh token');
+
+    // Rotate: issue a fresh pair, then revoke the token just used.
+    const session = await this._issueSession(user.id);
+    stored.revokedAt = new Date();
+    stored.replacedByHash = session.refreshTokenHash;
+    await this._refreshTokenRepo.save(stored);
+
+    return {
+      data: { token: session.accessToken, refreshToken: session.refreshToken },
+    };
   }
 
-  async handleOAuthLogin(profile: OAuthProfile, req: Request, res: Response) {
+  /**
+   * Revokes the caller's refresh-token family so the session cannot be resumed.
+   * Best-effort: a missing or malformed token is treated as already logged out.
+   */
+  async logout(encryptedRefreshToken?: string): Promise<MessageOnly> {
+    if (encryptedRefreshToken) {
+      try {
+        const rawToken = this._encryptionService.decrypt(encryptedRefreshToken);
+        const stored = await this._refreshTokenRepo.findByHash(
+          this._sha256(rawToken),
+        );
+        if (stored) {
+          await this._refreshTokenRepo.revokeAllForUser(stored.userId);
+          this._audit(LogAction.LOGOUT, stored.userId);
+        }
+      } catch {
+        // Ignore — logging out with an unreadable token is still a logout.
+      }
+    }
+
+    return { message: 'Logged out successfully' };
+  }
+
+  /**
+   * Exchanges the single-use OAuth code (delivered via the callback redirect)
+   * for the real session tokens, returned in the response body.
+   */
+  async exchangeOAuthCode(rawCode: string) {
+    const stored = await this._oauthCodeRepo.findByHash(this._sha256(rawCode));
+
+    if (!stored || stored.consumedAt || stored.expiresAt.getTime() < Date.now())
+      throw new UnauthorizedException('Invalid or expired authorization code');
+
+    stored.consumedAt = new Date();
+    await this._oauthCodeRepo.save(stored);
+
+    const user = await this._userRepo.find(stored.userId);
+    if (!user)
+      throw new UnauthorizedException('Invalid or expired authorization code');
+
+    const session = await this._issueSession(user.id);
+
+    this._audit(LogAction.LOGIN, user.id, {
+      metadata: { provider: 'google', isNewUser: stored.isNew },
+    });
+
+    return {
+      message: 'Successfully authenticated via Google',
+      data: {
+        user,
+        isNew: stored.isNew,
+        token: {
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+        },
+      },
+    };
+  }
+
+  async handleOAuthLogin(profile: OAuthProfile, res: Response) {
     let queryRunner: QueryRunner | undefined = undefined;
 
     try {
@@ -788,25 +954,23 @@ export class AuthService {
 
       await this._queryRunnerExec.commit(queryRunner);
 
-      await this._auditService.logAction(LogAction.LOGIN, user.id, {
-        metadata: { provider: profile.provider, isNewUser: isNew },
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+      // Hand the SPA a single-use code instead of the tokens themselves. The
+      // tokens are minted only when the SPA exchanges this code over a POST,
+      // so they never touch the redirect URL, browser history or access logs.
+      const rawCode = crypto.randomBytes(32).toString('hex');
+      await this._oauthCodeRepo.create({
+        codeHash: this._sha256(rawCode),
+        userId: user.id,
+        isNew,
+        expiresAt: new Date(Date.now() + AuthService.OAUTH_CODE_TTL_MS),
       });
-
-      const accessToken = this._generateAccessToken(user.id);
-      const refreshToken = this._generateRefreshToken(user.id);
-      const encryptedAccess = this._encryptionService.encrypt(accessToken);
-      const encryptedRefresh = this._encryptionService.encrypt(refreshToken);
 
       const frontendUrl =
         this._frontendUrl ||
         this._configService.get<string>('FRONTEND_SERVER_URL');
       const redirectUrl = new URL(this._oauthSuccessRedirect, frontendUrl);
 
-      redirectUrl.searchParams.append('access_token', encryptedAccess);
-      redirectUrl.searchParams.append('refresh_token', encryptedRefresh);
-      redirectUrl.searchParams.append('is_new', String(isNew));
+      redirectUrl.searchParams.append('code', rawCode);
 
       return res.redirect(redirectUrl.toString());
     } catch (error: unknown) {
