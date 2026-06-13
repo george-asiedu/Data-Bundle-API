@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from '@nestjs/typeorm';
@@ -11,7 +12,12 @@ export class TypeormConfigService implements TypeOrmOptionsFactory {
       type: 'postgres',
       url: this._configService.get('DATABASE_URL') as string,
       autoLoadEntities: true,
-      synchronize: this._configService.get<string>('NODE_ENV') !== 'production',
+      synchronize: false,
+      migrations: [
+        join(__dirname, '..', 'database', 'migrations', '*.{js,ts}'),
+      ],
+      migrationsTableName: 'migrations',
+      migrationsRun: true,
       ssl: {
         rejectUnauthorized: false,
       },
