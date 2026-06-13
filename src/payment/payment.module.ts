@@ -11,6 +11,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 import { AuditModule } from '../audit/audit.module';
+import { TransactionsService } from './transactions.service';
 
 @Module({
   imports: [
@@ -25,8 +26,14 @@ import { AuditModule } from '../audit/audit.module';
     TransactionRepository,
     PaymentFailureMailer,
     PaymentSuccessMailer,
+    TransactionsService,
   ],
   controllers: [PaymentController],
-  exports: [PaymentService, WalletRepository, TransactionRepository],
+  exports: [
+    PaymentService,
+    WalletRepository,
+    TransactionRepository,
+    TransactionsService,
+  ],
 })
 export class PaymentModule {}
