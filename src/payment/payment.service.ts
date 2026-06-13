@@ -26,6 +26,8 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 import { EncryptionService } from '../auth/encryption.service';
+import { AuditService } from '../audit/audit.service';
+import { LogAction } from '../audit/log-action.types';
 
 @Injectable()
 export class PaymentService {
@@ -45,6 +47,7 @@ export class PaymentService {
     private __paymentFailureMailer: PaymentFailureMailer,
     private _paymentSuccessMailer: PaymentSuccessMailer,
     private readonly _encryptionService: EncryptionService,
+    private readonly _auditService: AuditService,
   ) {
     this._paystackSecretKey = this._configService.get<string>(
       'PAYSTACK_SECRET_KEY',
@@ -435,6 +438,14 @@ export class PaymentService {
       }
 
       await this._queryRunnerExec.commit(queryRunner);
+
+      // Audit the confirmed money movement. The webhook has no req.user, so the
+      // global interceptor can't capture this — log it explicitly here.
+      void this._auditService.logAction(LogAction.PAYMENT_CONFIRMED, userId, {
+        resourceType: 'transaction',
+        resourceId: paystackRef,
+        metadata: { purpose, amount: amountInCedis },
+      });
 
       const customerEmail = data.customer?.email;
       const customerName = user.fullName || 'Agent';
