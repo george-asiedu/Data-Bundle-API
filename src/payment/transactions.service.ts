@@ -12,8 +12,13 @@ import { TransactionRepository } from './repositories/transaction.repository';
 import { WithdrawalRepository } from './repositories/withdrawal.repository';
 import { Paginator } from 'src/shared/services/paginator.provider';
 import { DataMessage } from 'src/lib/utils/types.utils';
-import { Transaction } from './entities/transactions.entity';
 import { Withdrawal } from './entities/withdrawal.entity';
+import {
+  TransactionView,
+  WalletView,
+  toTransactionView,
+  toWalletView,
+} from './payment.serializers';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { PaymentService } from './payment.service';
 import { AuditService } from '../audit/audit.service';
@@ -49,14 +54,17 @@ export class TransactionsService {
     }
   }
 
-  async getWallet(userId: string, requester: User) {
+  async getWallet(
+    userId: string,
+    requester: User,
+  ): Promise<{ wallet: WalletView }> {
     try {
       this._assertOwnership(requester, userId);
 
       const wallet = await this._walletRepo.findByUserId(userId);
       if (!wallet) throw new NotFoundException('Wallet not found');
 
-      return { wallet };
+      return { wallet: toWalletView(wallet) };
     } catch (error) {
       if (error instanceof ApplicationException)
         throw new NotFoundException(error.message);
@@ -71,14 +79,14 @@ export class TransactionsService {
     }
   }
 
-  async getTransaction(id: string): Promise<DataMessage<Transaction>> {
+  async getTransaction(id: string): Promise<DataMessage<TransactionView>> {
     try {
       const transaction = await this._transactionRepo.find(id);
       if (!transaction) throw new NotFoundException('Transaction not found');
 
       return {
         message: 'Transaction successfully fetched',
-        data: transaction,
+        data: toTransactionView(transaction),
       };
     } catch (error) {
       if (error instanceof ApplicationException)
@@ -92,14 +100,14 @@ export class TransactionsService {
 
   async getTransactionByReference(
     ref: string,
-  ): Promise<DataMessage<Transaction>> {
+  ): Promise<DataMessage<TransactionView>> {
     try {
       const transaction = await this._transactionRepo.findByPaystackRef(ref);
       if (!transaction) throw new NotFoundException('Transaction not found');
 
       return {
         message: 'Transaction found',
-        data: transaction,
+        data: toTransactionView(transaction),
       };
     } catch (error) {
       if (error instanceof ApplicationException)
@@ -115,7 +123,7 @@ export class TransactionsService {
     paginator: Paginator,
     userId: string,
     requester: User,
-  ): Promise<DataMessage<Transaction[]>> {
+  ): Promise<DataMessage<TransactionView[]>> {
     try {
       this._assertOwnership(requester, userId);
 
@@ -126,7 +134,7 @@ export class TransactionsService {
 
       return {
         message: 'Transactions successfully fetched',
-        data: transactions ?? [],
+        data: (transactions ?? []).map(toTransactionView),
       };
     } catch (error) {
       if (error instanceof ApplicationException)
