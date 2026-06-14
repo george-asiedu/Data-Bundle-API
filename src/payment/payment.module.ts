@@ -5,8 +5,10 @@ import { AuthModule } from '../auth/auth.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Wallet } from './entities/wallet.entity';
 import { Transaction } from './entities/transactions.entity';
+import { Withdrawal } from './entities/withdrawal.entity';
 import { WalletRepository } from './repositories/wallet.repository';
 import { TransactionRepository } from './repositories/transaction.repository';
+import { WithdrawalRepository } from './repositories/withdrawal.repository';
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
@@ -16,7 +18,7 @@ import { TransactionsController } from './transactions.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Wallet, Transaction]),
+    TypeOrmModule.forFeature([Wallet, Transaction, Withdrawal]),
     forwardRef(() => AuthModule),
     SubscriptionModule,
     forwardRef(() => AuditModule),
@@ -25,6 +27,7 @@ import { TransactionsController } from './transactions.controller';
     PaymentService,
     WalletRepository,
     TransactionRepository,
+    WithdrawalRepository,
     PaymentFailureMailer,
     PaymentSuccessMailer,
     TransactionsService,
