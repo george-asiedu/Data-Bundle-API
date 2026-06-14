@@ -49,6 +49,24 @@ export class WalletRepository {
       .getOne();
   }
 
+  /**
+   * Fetches a wallet for a user while taking a row-level write lock
+   * (SELECT ... FOR UPDATE). Used to serialise balance mutations so concurrent
+   * debits (withdrawals/purchases) can't double-spend. Must run inside the
+   * caller's active transaction. Transactions are intentionally NOT joined: an
+   * outer-joined nullable side cannot be locked in Postgres.
+   */
+  async findByUserIdForUpdate(
+    queryRunner: QueryRunner,
+    userId: string,
+  ): Promise<Wallet | null> {
+    return await queryRunner.manager
+      .createQueryBuilder(Wallet, 'wallets')
+      .setLock('pessimistic_write')
+      .where('wallets.user = :userId', { userId })
+      .getOne();
+  }
+
   async updateBalance(
     queryRunner: QueryRunner,
     wallet: Wallet,
