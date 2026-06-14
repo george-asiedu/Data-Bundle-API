@@ -109,6 +109,13 @@ export class User {
   @Exclude()
   backupCode?: string;
 
+  // Most recent Paystack reference for the registration fee. Persisted so login
+  // can reconcile a paid-but-not-yet-activated account against Paystack when the
+  // webhook is still in flight.
+  @Column({ name: 'registration_reference', nullable: true })
+  @Exclude()
+  registrationReference?: string;
+
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
 
