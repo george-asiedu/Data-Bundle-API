@@ -11,12 +11,16 @@ import { ApplicationException } from '../lib/exception/app.exception';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
 import {
   PaystackCreateSubaccountResponse,
+  PaystackTransferRecipientResponse,
+  PaystackTransferResponse,
   PaystackVerifyResponse,
   TransactionPurpose,
   TransactionType,
+  WithdrawalStatus,
 } from './payment.types';
 import { TransactionRepository } from './repositories/transaction.repository';
 import { WalletRepository } from './repositories/wallet.repository';
+import { WithdrawalRepository } from './repositories/withdrawal.repository';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { QueryRunner } from 'typeorm';
 import { UserRepository } from '../auth/repositories/user.repository';
@@ -41,6 +45,7 @@ export class PaymentService {
     private _configService: ConfigService,
     private _transactionRepo: TransactionRepository,
     private _walletRepo: WalletRepository,
+    private readonly _withdrawalRepo: WithdrawalRepository,
     private _queryRunnerExec: QueryRunnerExec,
     private readonly _userRepo: UserRepository,
     private _subscriptionService: SubscriptionService,
@@ -293,6 +298,16 @@ export class PaymentService {
     const event = payload.event;
     const data = payload.data;
 
+    // Payout settlement events are handled on their own path.
+    if (
+      event === 'transfer.success' ||
+      event === 'transfer.failed' ||
+      event === 'transfer.reversed'
+    ) {
+      await this._handleTransferEvent(event, data);
+      return;
+    }
+
     if (event !== 'charge.success') {
       this._logger.log(`Received non-processable webhook event: ${event}`);
       return;
@@ -483,6 +498,113 @@ export class PaymentService {
   }
 
   /**
+   * Settles a withdrawal payout from a Paystack transfer webhook.
+   * On success the request is marked PAID; on failure/reversal the held funds
+   * are credited back to the wallet and the request is marked FAILED. Idempotent:
+   * only acts on requests still in a non-terminal (APPROVED/PROCESSING) state.
+   */
+  private async _handleTransferEvent(
+    event: string,
+    data: unknown,
+  ): Promise<void> {
+    if (typeof data !== 'object' || data === null) {
+      this._logger.error('Received malformed transfer webhook payload');
+      return;
+    }
+
+    const transferCode = (data as { transfer_code?: unknown }).transfer_code;
+    if (typeof transferCode !== 'string') {
+      this._logger.error('Transfer webhook missing transfer_code');
+      return;
+    }
+
+    const withdrawal =
+      await this._withdrawalRepo.findByTransferCode(transferCode);
+    if (!withdrawal) {
+      this._logger.warn(
+        `Transfer webhook for unknown transfer_code ${transferCode}`,
+      );
+      return;
+    }
+
+    const isTerminal =
+      withdrawal.status === WithdrawalStatus.PAID ||
+      withdrawal.status === WithdrawalStatus.FAILED;
+    if (isTerminal) {
+      this._logger.log(
+        `Withdrawal ${withdrawal.id} already settled (${withdrawal.status}). Skipping.`,
+      );
+      return;
+    }
+
+    let queryRunner: QueryRunner | undefined = undefined;
+    try {
+      queryRunner = await this._queryRunnerExec.getRunner();
+
+      if (event === 'transfer.success') {
+        withdrawal.status = WithdrawalStatus.PAID;
+        await this._withdrawalRepo.save(queryRunner, withdrawal);
+        await this._queryRunnerExec.commit(queryRunner);
+
+        void this._auditService.logAction(
+          LogAction.WITHDRAWAL_PAID,
+          withdrawal.user?.id,
+          {
+            resourceType: 'withdrawal',
+            resourceId: withdrawal.id,
+            metadata: { amount: withdrawal.amount },
+          },
+        );
+        return;
+      }
+
+      // transfer.failed | transfer.reversed → refund the held funds.
+      const wallet = await this._walletRepo.findByUserIdForUpdate(
+        queryRunner,
+        withdrawal.user.id,
+      );
+      if (!wallet)
+        throw new ApplicationException('Wallet not found for refund');
+
+      const balanceAfter = Number(wallet.balance) + withdrawal.amount;
+      await this._walletRepo.updateBalance(queryRunner, wallet, balanceAfter);
+
+      await this._transactionRepo.add(
+        queryRunner,
+        {
+          type: TransactionType.CREDIT,
+          purpose: TransactionPurpose.WITHDRAWAL_REVERSAL,
+          amount: withdrawal.amount,
+          balanceAfter,
+          reference: `WDR-REV-${withdrawal.id}`,
+          paystackRef: `WDR-REV-${withdrawal.id}`,
+        },
+        withdrawal.user,
+        wallet,
+      );
+
+      withdrawal.status = WithdrawalStatus.FAILED;
+      await this._withdrawalRepo.save(queryRunner, withdrawal);
+      await this._queryRunnerExec.commit(queryRunner);
+
+      void this._auditService.logAction(
+        LogAction.WITHDRAWAL_FAILED,
+        withdrawal.user?.id,
+        {
+          resourceType: 'withdrawal',
+          resourceId: withdrawal.id,
+          metadata: { amount: withdrawal.amount, event, refunded: true },
+        },
+      );
+    } catch (error) {
+      if (queryRunner) await this._queryRunnerExec.rollback(queryRunner);
+      this._logger.error(
+        `Failed to settle transfer for withdrawal ${withdrawal.id}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Verifies an account number and bank code via Paystack
    */
   async resolveAccountNumber(
@@ -532,6 +654,78 @@ export class PaymentService {
       );
       throw new InternalServerErrorException(
         'Failed to setup financial profile with the payment gateway.',
+      );
+    }
+  }
+
+  /**
+   * Creates (or re-fetches) a Paystack transfer recipient for an agent's
+   * settlement account. Required before any payout can be initiated.
+   * @returns the recipient_code to attach to the transfer
+   */
+  async createTransferRecipient(
+    name: string,
+    accountNumber: string,
+    bankCode: string,
+  ): Promise<string> {
+    try {
+      const response = await this._http.post<PaystackTransferRecipientResponse>(
+        '/transferrecipient',
+        {
+          type: 'ghipss', // Ghana bank/MoMo settlement
+          name,
+          account_number: accountNumber,
+          bank_code: bankCode,
+          currency: 'GHS',
+        },
+      );
+
+      return response.data.data.recipient_code;
+    } catch (error: unknown) {
+      this._logger.error(
+        `Transfer recipient creation failed: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Could not register the settlement account with the payment gateway.',
+      );
+    }
+  }
+
+  /**
+   * Initiates a payout to a previously-created recipient.
+   * @param amountGhs - amount in whole GHS; converted to pesewas for Paystack
+   * @returns the transfer code, gateway reference and current status
+   */
+  async initiateTransfer(
+    amountGhs: number,
+    recipientCode: string,
+    reason: string,
+    reference: string,
+  ): Promise<{ transferCode: string; reference: string; status: string }> {
+    try {
+      const response = await this._http.post<PaystackTransferResponse>(
+        '/transfer',
+        {
+          source: 'balance',
+          amount: amountGhs * 100,
+          recipient: recipientCode,
+          reason,
+          reference,
+          currency: 'GHS',
+        },
+      );
+
+      return {
+        transferCode: response.data.data.transfer_code,
+        reference: response.data.data.reference,
+        status: response.data.data.status,
+      };
+    } catch (error: unknown) {
+      this._logger.error(
+        `Transfer initiation failed: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to initiate the payout with the payment gateway.',
       );
     }
   }
