@@ -24,6 +24,14 @@ export enum LogAction {
   PAYMENT_CONFIRMED = 'payment.confirmed',
   COMPLETE_FINANCIAL_SETUP = 'payment.complete_financial_setup',
   UPDATE_FINANCIAL_SETUP = 'payment.update_financial_setup',
+
+  // Wallet
+  WALLET_TOP_UP_INITIATED = 'wallet.top_up_initiated',
+  WITHDRAWAL_REQUESTED = 'wallet.withdrawal_requested',
+  WITHDRAWAL_APPROVED = 'wallet.withdrawal_approved',
+  WITHDRAWAL_REJECTED = 'wallet.withdrawal_rejected',
+  WITHDRAWAL_PAID = 'wallet.withdrawal_paid',
+  WITHDRAWAL_FAILED = 'wallet.withdrawal_failed',
 }
 
 export interface CreateLogPayload {
