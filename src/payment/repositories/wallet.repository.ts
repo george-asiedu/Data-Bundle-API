@@ -44,7 +44,6 @@ export class WalletRepository {
 
   async findByUserId(userId: string): Promise<Wallet | null> {
     return await this._getQueryBuilder()
-      .leftJoinAndSelect('wallets.transactions', 'transactions')
       .where('wallets.user = :userId', { userId })
       .getOne();
   }
