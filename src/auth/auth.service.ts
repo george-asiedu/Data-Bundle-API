@@ -219,6 +219,12 @@ export class AuthService {
           existingUser.id,
         );
 
+      // Persist the reference so login can reconcile against Paystack if the
+      // webhook is delayed.
+      await this._userRepo.update(queryRunner, existingUser, {
+        registrationReference: paystackSession.data.reference,
+      });
+
       await this._confirmationMailer.sendMail({
         email: existingUser.email,
         name: existingUser.fullName ?? 'User',
@@ -491,23 +497,44 @@ export class AuthService {
       }
 
       if (user.accountStatus === AccountStatus.PENDING_PAYMENT) {
-        const registrationFeeGhs = 1;
-        const paystackSession =
-          await this._paymentService.initializeTransactionForRegistration(
-            {
-              email: user.email,
-              amount: registrationFeeGhs,
-            },
-            user.id,
-          );
+        // Reconcile first: the webhook may still be in flight for a payment the
+        // user already completed. Verify the stored reference against Paystack
+        // (idempotent) and re-read the account before deciding it's unpaid.
+        if (user.registrationReference) {
+          try {
+            await this._paymentService.verifyTransaction(
+              user.registrationReference,
+            );
+          } catch (reconcileError) {
+            this._logger.warn(
+              `Login reconciliation for ${user.email} failed: ${(reconcileError as Error).message}`,
+            );
+          }
+        }
 
-        throw new BadRequestException({
-          message: 'Your registration payment is incomplete.',
-          accountStatus: user.accountStatus,
-          authorizationUrl: paystackSession.data.authorization_url,
-          accessCode: paystackSession.data.access_code,
-          reference: paystackSession.data.reference,
-        });
+        const reconciled = await this._userRepo.find(user.email);
+        if (reconciled?.accountStatus !== AccountStatus.ACTIVE) {
+          const registrationFeeGhs = 1;
+          const paystackSession =
+            await this._paymentService.initializeTransactionForRegistration(
+              {
+                email: user.email,
+                amount: registrationFeeGhs,
+              },
+              user.id,
+            );
+
+          throw new BadRequestException({
+            message: 'Your registration payment is incomplete.',
+            accountStatus: AccountStatus.PENDING_PAYMENT,
+            authorizationUrl: paystackSession.data.authorization_url,
+            accessCode: paystackSession.data.access_code,
+            reference: paystackSession.data.reference,
+          });
+        }
+
+        // Account is now active — fall through to normal MFA login.
+        user.accountStatus = reconciled.accountStatus;
       }
 
       queryRunner = await this._queryRunnerExec.getRunner();
