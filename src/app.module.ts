@@ -11,6 +11,7 @@ import { UploadModule } from './upload/upload.module';
 import { PaymentModule } from './payment/payment.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { AuditModule } from './audit/audit.module';
+import { PackagesModule } from './packages/packages.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditInterceptor } from './audit/audit.interceptor';
 
@@ -30,6 +31,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     PaymentModule,
     SubscriptionModule,
     AuditModule,
+    PackagesModule,
   ],
   controllers: [AppController],
   providers: [
