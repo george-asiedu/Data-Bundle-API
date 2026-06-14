@@ -25,6 +25,13 @@ export enum LogAction {
   COMPLETE_FINANCIAL_SETUP = 'payment.complete_financial_setup',
   UPDATE_FINANCIAL_SETUP = 'payment.update_financial_setup',
 
+  // Packages & pricing
+  PACKAGE_PRICE_UPDATED = 'package.price_updated',
+  PACKAGE_VISIBILITY_TOGGLED = 'package.visibility_toggled',
+  PACKAGE_MARGIN_APPLIED = 'package.margin_applied',
+  PACKAGE_CREATED = 'package.created',
+  PACKAGE_UPDATED = 'package.updated',
+
   // Wallet
   WALLET_TOP_UP_INITIATED = 'wallet.top_up_initiated',
   WITHDRAWAL_REQUESTED = 'wallet.withdrawal_requested',
