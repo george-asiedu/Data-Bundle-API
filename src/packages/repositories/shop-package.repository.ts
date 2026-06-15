@@ -84,4 +84,35 @@ export class ShopPackageRepository {
     await this._repo.save(rows);
     return overrides;
   }
+
+  /**
+   * Sets shop visibility for many packages at once. New override rows are
+   * created with the package's suggested retail price as a sensible default.
+   */
+  async applyVisibility(
+    userId: string,
+    entries: { packageId: string; inShop: boolean }[],
+    suggestedByPackage: Map<string, number>,
+  ): Promise<Map<string, ShopPackage>> {
+    const overrides = await this.findByUserMap(userId);
+    let nextNum = await this._currentMaxId();
+
+    const rows = entries.map(({ packageId, inShop }) => {
+      let row = overrides.get(packageId);
+      if (!row) {
+        row = this._repo.create({
+          userId,
+          packageId,
+          retailPrice: suggestedByPackage.get(packageId) ?? 0,
+        });
+        row.id = `SPK${++nextNum}`;
+        overrides.set(packageId, row);
+      }
+      row.inShop = inShop;
+      return row;
+    });
+
+    await this._repo.save(rows);
+    return overrides;
+  }
 }
