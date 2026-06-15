@@ -19,6 +19,7 @@ import { User } from '../auth/entities/user.entity';
 import { PackagesService } from './packages.service';
 import {
   ApplyMarginDto,
+  BulkPricingDto,
   CreatePackageDto,
   SetRetailPriceDto,
   SetVisibilityDto,
@@ -45,6 +46,13 @@ export class PackagesController {
   @Post('apply-margin')
   applyMargin(@Body() body: ApplyMarginDto, @CurrentUser() user: User) {
     return this._packagesService.applyMargin(user.id, body);
+  }
+
+  @ApiOperation({ summary: 'Save all changed retail prices at once' })
+  @HttpCode(HttpStatus.OK)
+  @Post('pricing/bulk')
+  bulkPricing(@Body() body: BulkPricingDto, @CurrentUser() user: User) {
+    return this._packagesService.bulkSetRetailPrices(user.id, body.items);
   }
 
   @ApiOperation({ summary: 'Get my shop (auto-provisioned on first access)' })
