@@ -267,6 +267,60 @@ export class PackagesService {
     }
   }
 
+  /**
+   * Persists many retail prices at once (the "Save all" action). Each price is
+   * validated against its package's wholesale floor; the whole batch is rejected
+   * if any item is invalid.
+   */
+  async bulkSetRetailPrices(
+    userId: string,
+    items: { packageId: string; retailPrice: number }[],
+  ): Promise<DataMessage<PackageView[]>> {
+    try {
+      const packages = await this._packageRepo.findAllAvailable();
+      const byId = new Map(packages.map((p) => [p.id, p]));
+
+      const entries: { packageId: string; retailPrice: number }[] = [];
+      for (const item of items) {
+        const pkg = byId.get(item.packageId);
+        if (!pkg) {
+          throw new BadRequestException(`Unknown package: ${item.packageId}`);
+        }
+        if (item.retailPrice < pkg.wholesalePrice) {
+          throw new BadRequestException(
+            `Retail price for ${pkg.sizeLabel} ${pkg.network} cannot be below its wholesale cost.`,
+          );
+        }
+        entries.push({ packageId: pkg.id, retailPrice: item.retailPrice });
+      }
+
+      const overrides = await this._shopPackageRepo.applyRetailPrices(
+        userId,
+        entries,
+      );
+
+      void this._auditService.logAction(
+        LogAction.PACKAGE_PRICE_UPDATED,
+        userId,
+        {
+          resourceType: 'shop_packages',
+          resourceId: userId,
+          metadata: { bulk: true, affected: entries.length },
+        },
+      );
+
+      const data = packages.map((pkg) =>
+        toPackageView(pkg, overrides.get(pkg.id)),
+      );
+
+      return { message: 'All prices saved successfully', data };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Failed to save prices');
+    }
+  }
+
   // ── Admin-facing ─────────────────────────────────────────────
 
   async listAll(): Promise<DataMessage<Package[]>> {
