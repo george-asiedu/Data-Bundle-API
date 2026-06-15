@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -9,7 +11,9 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PackageExpiry, PackageNetwork, PackageType } from '../packages.types';
 
 export class SetRetailPriceDto {
@@ -24,6 +28,26 @@ export class SetVisibilityDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   inShop: boolean;
+}
+
+export class BulkPriceItemDto {
+  @ApiProperty({ example: 'PKG1001' })
+  @IsString()
+  packageId: string;
+
+  @ApiProperty({ example: 480, description: 'Retail price in pesewas' })
+  @IsInt()
+  @Min(1)
+  retailPrice: number;
+}
+
+export class BulkPricingDto {
+  @ApiProperty({ type: [BulkPriceItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => BulkPriceItemDto)
+  items: BulkPriceItemDto[];
 }
 
 export class ApplyMarginDto {
