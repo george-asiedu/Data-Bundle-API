@@ -321,6 +321,57 @@ export class PackagesService {
     }
   }
 
+  /**
+   * Persists shop visibility for many packages at once (staged toggles saved in
+   * one request instead of one call per toggle).
+   */
+  async bulkSetVisibility(
+    userId: string,
+    items: { packageId: string; inShop: boolean }[],
+  ): Promise<DataMessage<PackageView[]>> {
+    try {
+      const packages = await this._packageRepo.findAllAvailable();
+      const byId = new Map(packages.map((p) => [p.id, p]));
+      const suggested = new Map(
+        packages.map((p) => [p.id, p.suggestedRetailPrice]),
+      );
+
+      const entries: { packageId: string; inShop: boolean }[] = [];
+      for (const item of items) {
+        if (!byId.has(item.packageId)) {
+          throw new BadRequestException(`Unknown package: ${item.packageId}`);
+        }
+        entries.push({ packageId: item.packageId, inShop: item.inShop });
+      }
+
+      const overrides = await this._shopPackageRepo.applyVisibility(
+        userId,
+        entries,
+        suggested,
+      );
+
+      void this._auditService.logAction(
+        LogAction.PACKAGE_VISIBILITY_TOGGLED,
+        userId,
+        {
+          resourceType: 'shop_packages',
+          resourceId: userId,
+          metadata: { bulk: true, affected: entries.length },
+        },
+      );
+
+      const data = packages.map((pkg) =>
+        toPackageView(pkg, overrides.get(pkg.id)),
+      );
+
+      return { message: 'Shop updated successfully', data };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Failed to update shop');
+    }
+  }
+
   // ── Admin-facing ─────────────────────────────────────────────
 
   async listAll(): Promise<DataMessage<Package[]>> {
