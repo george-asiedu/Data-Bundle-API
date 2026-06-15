@@ -50,6 +50,25 @@ export class BulkPricingDto {
   items: BulkPriceItemDto[];
 }
 
+export class BulkVisibilityItemDto {
+  @ApiProperty({ example: 'PKG1001' })
+  @IsString()
+  packageId: string;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  inShop: boolean;
+}
+
+export class BulkVisibilityDto {
+  @ApiProperty({ type: [BulkVisibilityItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => BulkVisibilityItemDto)
+  items: BulkVisibilityItemDto[];
+}
+
 export class ApplyMarginDto {
   @ApiProperty({
     example: 20,
