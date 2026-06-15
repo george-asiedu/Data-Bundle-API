@@ -20,6 +20,7 @@ import { PackagesService } from './packages.service';
 import {
   ApplyMarginDto,
   BulkPricingDto,
+  BulkVisibilityDto,
   CreatePackageDto,
   SetRetailPriceDto,
   SetVisibilityDto,
@@ -53,6 +54,13 @@ export class PackagesController {
   @Post('pricing/bulk')
   bulkPricing(@Body() body: BulkPricingDto, @CurrentUser() user: User) {
     return this._packagesService.bulkSetRetailPrices(user.id, body.items);
+  }
+
+  @ApiOperation({ summary: 'Save shop visibility for many packages at once' })
+  @HttpCode(HttpStatus.OK)
+  @Post('visibility/bulk')
+  bulkVisibility(@Body() body: BulkVisibilityDto, @CurrentUser() user: User) {
+    return this._packagesService.bulkSetVisibility(user.id, body.items);
   }
 
   @ApiOperation({ summary: 'Get my shop (auto-provisioned on first access)' })
