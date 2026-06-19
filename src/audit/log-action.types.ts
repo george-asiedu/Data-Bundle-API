@@ -32,6 +32,14 @@ export enum LogAction {
   PACKAGE_CREATED = 'package.created',
   PACKAGE_UPDATED = 'package.updated',
 
+  // Orders
+  ORDER_PLACED = 'order.placed',
+  ORDER_PROCESSING = 'order.processing',
+  ORDER_DELIVERED = 'order.delivered',
+  ORDER_FAILED = 'order.failed',
+  ORDER_RETRIED = 'order.retried',
+  ORDER_STATUS_SYNCED = 'order.status_synced',
+
   // Wallet
   WALLET_TOP_UP_INITIATED = 'wallet.top_up_initiated',
   WITHDRAWAL_REQUESTED = 'wallet.withdrawal_requested',
