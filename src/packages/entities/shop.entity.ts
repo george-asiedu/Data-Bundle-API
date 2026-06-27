@@ -39,6 +39,33 @@ export class Shop {
   @Column({ name: 'is_active', type: 'boolean', default: false })
   isActive: boolean;
 
+  // ── Storefront settings (shown on the public shop) ──
+  @Column({ name: 'tagline', type: 'varchar', nullable: true })
+  tagline?: string | null;
+
+  @Column({
+    name: 'welcome_message',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
+  welcomeMessage?: string | null;
+
+  @Column({ name: 'contact_phone', type: 'varchar', nullable: true })
+  contactPhone?: string | null;
+
+  @Column({ name: 'whatsapp', type: 'varchar', nullable: true })
+  whatsapp?: string | null;
+
+  @Column({ name: 'facebook', type: 'varchar', nullable: true })
+  facebook?: string | null;
+
+  @Column({ name: 'instagram', type: 'varchar', nullable: true })
+  instagram?: string | null;
+
+  @Column({ name: 'logo_url', type: 'varchar', nullable: true })
+  logoUrl?: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
