@@ -13,7 +13,10 @@ import {
 export interface SupplierProvider {
   readonly name: SupplierName;
   placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult>;
-  checkStatus(reference: string): Promise<CheckStatusResult>;
+  checkStatus(
+    reference: string,
+    isAtBigtime?: boolean,
+  ): Promise<CheckStatusResult>;
 }
 
 /** DI token for the array of registered supplier providers. */
