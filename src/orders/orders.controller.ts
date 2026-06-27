@@ -11,6 +11,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { RoleGuard } from '../auth/guards/role.guard';
+import { Roles } from '../shared/decorators/role.decorator';
+import { Role } from '../auth/auth.types';
 import { CurrentUser } from '../shared/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
 import { PaginatorBuilder } from '../shared/services/paginator.provider';
@@ -45,6 +48,20 @@ export class OrdersController {
       .setQuery(params.q)
       .getResult();
     return this._ordersService.listMyOrders(user.id, paginator);
+  }
+
+  @ApiOperation({ summary: 'Admin: list all platform orders (Verdeaccess)' })
+  @UseGuards(RoleGuard)
+  @Roles(Role.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @Get('admin/all')
+  listAll(@Query() params: QueryPaginatorDto) {
+    const paginator = this._paginatorBuilder
+      .setPage(params.page)
+      .setPerPage(params.perPage)
+      .setQuery(params.q)
+      .getResult();
+    return this._ordersService.listAllOrders(paginator);
   }
 
   @ApiOperation({ summary: 'Get a single order' })
