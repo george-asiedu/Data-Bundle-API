@@ -67,6 +67,16 @@ export class PackagesService {
     }
     if (dto.name !== undefined) shop.name = dto.name.trim();
     if (dto.isActive !== undefined) shop.isActive = dto.isActive;
+    if (dto.tagline !== undefined) shop.tagline = dto.tagline.trim() || null;
+    if (dto.welcomeMessage !== undefined)
+      shop.welcomeMessage = dto.welcomeMessage.trim() || null;
+    if (dto.contactPhone !== undefined)
+      shop.contactPhone = dto.contactPhone.trim() || null;
+    if (dto.whatsapp !== undefined) shop.whatsapp = dto.whatsapp.trim() || null;
+    if (dto.facebook !== undefined) shop.facebook = dto.facebook.trim() || null;
+    if (dto.instagram !== undefined)
+      shop.instagram = dto.instagram.trim() || null;
+    if (dto.logoUrl !== undefined) shop.logoUrl = dto.logoUrl.trim() || null;
 
     try {
       const saved = await this._shopRepo.save(shop);
