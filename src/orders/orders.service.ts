@@ -24,10 +24,13 @@ import { PackageRepository } from '../packages/repositories/package.repository';
 import { Package } from '../packages/entities/package.entity';
 import { WalletRepository } from '../payment/repositories/wallet.repository';
 import { TransactionRepository } from '../payment/repositories/transaction.repository';
+import { PaymentService } from '../payment/payment.service';
 import { QueryRunnerExec } from '../shared/services/query-runner-exec.service';
 import { EncryptionService } from '../auth/encryption.service';
 import { User } from '../auth/entities/user.entity';
+import { UserRepository } from '../auth/repositories/user.repository';
 import { Role } from '../auth/auth.types';
+import { PackageNetwork, PackageType } from '../packages/packages.types';
 import { ApplicationException } from '../lib/exception/app.exception';
 import { TransactionPurpose, TransactionType } from '../payment/payment.types';
 import { DataMessage } from '../lib/utils/types.utils';
@@ -49,6 +52,8 @@ export class OrdersService {
     private readonly _encryptionService: EncryptionService,
     private readonly _suppliers: SupplierRegistry,
     private readonly _auditService: AuditService,
+    private readonly _userRepo: UserRepository,
+    private readonly _paymentService: PaymentService,
     private readonly _config: ConfigService,
   ) {
     this._platformVendorKey = this._config.get<string>(
@@ -251,7 +256,163 @@ export class OrdersService {
     }
   }
 
+  // ── Admin: platform-wide order tracking ─────────────────────
+
+  async listAllOrders(paginator: Paginator): Promise<DataMessage<OrderView[]>> {
+    try {
+      const orders = await this._orderRepo.paginateAll(paginator);
+      return {
+        message: 'Orders retrieved successfully',
+        data: orders.map(toOrderView),
+      };
+    } catch (error) {
+      this._logger.error((error as Error).message);
+      throw new InternalServerErrorException('Failed to load orders');
+    }
+  }
+
+  // ── Shop (customer) order: checkout → confirm → fulfil ───────
+
+  /**
+   * Starts a customer checkout: creates a PENDING shop order and a Paystack
+   * charge for the retail price. The customer pays via the returned access code;
+   * fulfilment happens on confirm.
+   */
+  async createShopCheckout(input: {
+    shopUserId: string;
+    shopSlug: string;
+    pkg: Package;
+    recipientNumber: string;
+    customerEmail: string;
+    retailPrice: number;
+    customerName?: string | null;
+  }): Promise<
+    DataMessage<{ orderId: string; accessCode: string; reference: string }>
+  > {
+    const owner = await this._userRepo.find(input.shopUserId);
+    if (!owner) throw new NotFoundException('Shop owner not found');
+
+    const supplierReference = this._reference();
+    const order = this._buildOrder({
+      id: await this._orderRepo.getNextId(),
+      user: owner,
+      pkg: input.pkg,
+      recipientNumber: input.recipientNumber,
+      amount: input.retailPrice,
+      channel: OrderChannel.SHOP,
+      paymentMethod: OrderPaymentMethod.PAYSTACK,
+      reference: supplierReference,
+      customerEmail: input.customerEmail,
+      customerName: input.customerName ?? null,
+    });
+
+    let saved = await this._orderRepo.save(order);
+
+    const session = await this._paymentService.initializeShopOrderPayment({
+      email: input.customerEmail,
+      amount: input.retailPrice,
+      orderId: saved.id,
+      shopSlug: input.shopSlug,
+    });
+
+    saved.paystackReference = session.reference;
+    saved = await this._orderRepo.save(saved);
+
+    return {
+      message: 'Checkout started',
+      data: {
+        orderId: saved.id,
+        accessCode: session.access_code,
+        reference: session.reference,
+      },
+    };
+  }
+
+  /**
+   * Confirms a shop order after the customer pays: verifies the Paystack charge
+   * (no wallet side effects) and fulfils the order with the supplier.
+   */
+  async confirmShopOrder(
+    paystackReference: string,
+  ): Promise<DataMessage<OrderView>> {
+    const order =
+      await this._orderRepo.findByPaystackReference(paystackReference);
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Already fulfilled/in-flight — return current state (idempotent).
+    if (order.status !== OrderStatus.PENDING) {
+      return { message: 'Order already processed', data: toOrderView(order) };
+    }
+
+    const charge =
+      await this._paymentService.verifyChargeSucceeded(paystackReference);
+    if (!charge.success) {
+      throw new BadRequestException('Payment not completed.');
+    }
+
+    const owner = await this._userRepo.find(order.userId);
+    if (!owner) throw new NotFoundException('Shop owner not found');
+
+    const fulfilled = await this._fulfil(order, owner);
+    void this._auditService.logAction(LogAction.ORDER_PLACED, order.userId, {
+      resourceType: 'order',
+      resourceId: order.id,
+      metadata: { channel: order.channel, amount: order.amount },
+    });
+
+    return {
+      message: this._placementMessage(fulfilled.status),
+      data: toOrderView(fulfilled),
+    };
+  }
+
+  /**
+   * Customer retry of a failed shop order using their Paystack reference — the
+   * money is already taken, so we re-attempt fulfilment without re-charging.
+   */
+  async retryShopOrderByReference(
+    paystackReference: string,
+  ): Promise<DataMessage<OrderView>> {
+    const order =
+      await this._orderRepo.findByPaystackReference(paystackReference);
+    if (!order) throw new NotFoundException('Order not found');
+    if (
+      order.status !== OrderStatus.FAILED &&
+      order.status !== OrderStatus.PENDING
+    ) {
+      throw new BadRequestException(
+        `This order cannot be retried (status: ${order.status})`,
+      );
+    }
+
+    const owner = await this._userRepo.find(order.userId);
+    if (!owner) throw new NotFoundException('Shop owner not found');
+
+    order.retryCount += 1;
+    const fulfilled = await this._fulfil(order, owner, true);
+    void this._auditService.logAction(LogAction.ORDER_RETRIED, order.userId, {
+      resourceType: 'order',
+      resourceId: order.id,
+      metadata: { attempt: order.retryCount, channel: order.channel },
+    });
+
+    return {
+      message: this._placementMessage(fulfilled.status),
+      data: toOrderView(fulfilled),
+    };
+  }
+
   // ── Internals ────────────────────────────────────────────────
+
+  /** Platform rule: only AT BigTime uses the bigtime supplier endpoint. */
+  private _isAtBigtime(order: {
+    network: PackageNetwork;
+    type: PackageType;
+  }): boolean {
+    return (
+      order.network === PackageNetwork.AT && order.type === PackageType.BIGTIME
+    );
+  }
 
   /** Sends the order to its supplier and persists the resulting status. */
   private async _fulfil(
@@ -305,7 +466,10 @@ export class OrdersService {
 
   private async _sync(order: Order): Promise<Order> {
     const provider = this._suppliers.get(order.supplier);
-    const result = await provider.checkStatus(order.supplierReference);
+    const result = await provider.checkStatus(
+      order.supplierReference,
+      this._isAtBigtime(order),
+    );
 
     const previous = order.status;
     order.supplierStatusCode = result.statusCode;
