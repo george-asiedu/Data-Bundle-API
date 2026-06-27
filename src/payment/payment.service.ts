@@ -205,6 +205,77 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Initializes a Paystack charge for a public shop order (customer checkout).
+   * No wallet/user is involved — the customer pays the retail price and receives
+   * a Paystack receipt at their email. The order id is carried in metadata.
+   * @param amount - retail price in pesewas (Paystack's smallest unit)
+   */
+  async initializeShopOrderPayment(input: {
+    email: string;
+    amount: number;
+    orderId: string;
+    shopSlug: string;
+  }): Promise<{
+    authorization_url: string;
+    access_code: string;
+    reference: string;
+  }> {
+    try {
+      const frontendUrl =
+        this._configService.get<string>('FRONTEND_LOCAL_URL') ||
+        this._configService.get<string>('FRONTEND_SERVER_URL');
+      const callbackUrl = `${frontendUrl}/shop/${input.shopSlug}`;
+
+      const response = await this._http.post<{
+        status: boolean;
+        message: string;
+        data: {
+          authorization_url: string;
+          access_code: string;
+          reference: string;
+        };
+      }>('/transaction/initialize', {
+        email: input.email,
+        amount: input.amount,
+        callback_url: callbackUrl,
+        metadata: { orderId: input.orderId, purpose: 'SHOP_ORDER' },
+      });
+      return response.data.data;
+    } catch (error: unknown) {
+      this._logger.error(
+        `Shop order payment init failed: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Failed to start payment. Please try again.',
+      );
+    }
+  }
+
+  /**
+   * Verifies a Paystack charge succeeded, with NO side effects (no wallet
+   * credit). Used to confirm a customer shop payment before fulfilment.
+   */
+  async verifyChargeSucceeded(
+    reference: string,
+  ): Promise<{ success: boolean; amount: number }> {
+    try {
+      const response = await this._http.get<PaystackVerifyResponse>(
+        `/transaction/verify/${encodeURIComponent(reference)}`,
+      );
+      const data = response.data.data;
+      return {
+        success: data.status === 'success',
+        amount: Number(data.amount) || 0,
+      };
+    } catch (error: unknown) {
+      this._logger.error(
+        `Charge verify failed for ${reference}: ${(error as Error).message}`,
+      );
+      return { success: false, amount: 0 };
+    }
+  }
+
   /** Detects a Postgres unique-constraint violation (duplicate paystackRef). */
   private _isDuplicateTransaction(error: unknown): boolean {
     return (
@@ -384,6 +455,15 @@ export class PaymentService {
     const userId = data.metadata?.userId as string;
     const purpose = data.metadata?.purpose as TransactionPurpose;
     const amountInCedis = Number(data.amount) / 100;
+
+    // Shop-order charges are customer payments (no wallet). They're fulfilled by
+    // the shop confirm flow / order poller, not the wallet pipeline here.
+    if ((purpose as string) === 'SHOP_ORDER') {
+      this._logger.log(
+        `Skipping wallet handling for shop-order charge ${paystackRef}`,
+      );
+      return;
+    }
 
     if (!userId || !purpose) {
       throw new BadRequestException('Missing required transaction metadata');
