@@ -9,7 +9,7 @@ import {
   PlaceOrderResult,
   SupplierName,
 } from '../orders.types';
-import { PackageType } from '../../packages/packages.types';
+import { PackageNetwork, PackageType } from '../../packages/packages.types';
 
 interface VerdePlaceResponse {
   status?: number | string;
@@ -83,8 +83,19 @@ export class VerdeaccessProvider implements SupplierProvider {
       this._config.get<string>('PLATFORM_DEFAULT_VENDOR_API_KEY', '');
   }
 
+  /**
+   * Only AT BigTime uses the dedicated bigtime endpoint. Everything else —
+   * MTN (regular + bigtime), AT iShare, Telecel — uses the regular endpoint.
+   */
+  private _usesBigtimeEndpoint(
+    network: PackageNetwork,
+    type: PackageType,
+  ): boolean {
+    return network === PackageNetwork.AT && type === PackageType.BIGTIME;
+  }
+
   async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
-    const isBigtime = input.type === PackageType.BIGTIME;
+    const isBigtime = this._usesBigtimeEndpoint(input.network, input.type);
     const path = isBigtime ? this._paths.bigtime : this._paths.regular;
 
     // BigTime is AT-specific and omits the network field; regular includes it.
@@ -117,26 +128,28 @@ export class VerdeaccessProvider implements SupplierProvider {
     }
   }
 
-  async checkStatus(reference: string): Promise<CheckStatusResult> {
-    // We don't persist which sub-endpoint placed the order, so try the regular
-    // status endpoint first and fall back to the bigtime one.
-    const attempt = async (
-      path: string,
-    ): Promise<VerdeStatusResponse | null> => {
-      try {
-        const res = await this._http.post<VerdeStatusResponse>(path, {
-          reference_id: reference,
-          api: this._adminApiKey,
-        });
-        return res.data ?? null;
-      } catch {
-        return null;
-      }
-    };
+  async checkStatus(
+    reference: string,
+    isAtBigtime = false,
+  ): Promise<CheckStatusResult> {
+    // Status check uses the platform admin key (== the Verdeaccess vendor key)
+    // and the status endpoint matching how the order was placed.
+    const path = isAtBigtime
+      ? this._paths.bigtimeStatus
+      : this._paths.regularStatus;
 
-    const data =
-      (await attempt(this._paths.regularStatus)) ??
-      (await attempt(this._paths.bigtimeStatus));
+    let data: VerdeStatusResponse | null = null;
+    try {
+      const res = await this._http.post<VerdeStatusResponse>(path, {
+        reference_id: reference,
+        api: this._adminApiKey,
+      });
+      data = res.data ?? null;
+    } catch (error) {
+      this._logger.warn(
+        `Verde status check failed (ref ${reference}): ${(error as Error).message}`,
+      );
+    }
 
     const statusCode = this._toCode(data?.status, 0);
     const rawStatus = data?.order_status ?? null;
@@ -145,6 +158,11 @@ export class VerdeaccessProvider implements SupplierProvider {
       rawStatus,
       status: this._mapStatus(rawStatus),
     };
+  }
+
+  /** Whether an order with this network/type was placed via the bigtime endpoint. */
+  usesBigtimeEndpoint(network: PackageNetwork, type: PackageType): boolean {
+    return this._usesBigtimeEndpoint(network, type);
   }
 
   private _toCode(value: unknown, fallback: number): number {
