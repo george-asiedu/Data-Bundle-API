@@ -21,6 +21,10 @@ export class ShopRepository {
     return `SHP${maxNum + 1}`;
   }
 
+  async findBySlug(slug: string): Promise<Shop | null> {
+    return await this._repo.findOne({ where: { slug } });
+  }
+
   async findByUserId(userId: string): Promise<Shop | null> {
     return await this._repo.findOne({ where: { userId } });
   }
