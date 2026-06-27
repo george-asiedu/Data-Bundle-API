@@ -16,6 +16,8 @@ export interface OrderView {
   sizeLabel: string;
   recipientNumber: string;
   amount: number;
+  wholesaleAmount: number;
+  profit: number;
   status: OrderStatus;
   channel: OrderChannel;
   paymentMethod: OrderPaymentMethod;
@@ -25,6 +27,9 @@ export interface OrderView {
   retryCount: number;
   retryable: boolean;
   createdAt: Date;
+  // Populated for admin/platform views when the placing user is loaded.
+  agentId?: string;
+  agentName?: string | null;
 }
 
 export function toOrderView(order: Order): OrderView {
@@ -36,6 +41,8 @@ export function toOrderView(order: Order): OrderView {
     sizeLabel: order.sizeLabel,
     recipientNumber: order.recipientNumber,
     amount: order.amount,
+    wholesaleAmount: order.wholesaleAmount,
+    profit: order.amount - order.wholesaleAmount,
     status: order.status,
     channel: order.channel,
     paymentMethod: order.paymentMethod,
@@ -47,5 +54,8 @@ export function toOrderView(order: Order): OrderView {
       order.status === OrderStatus.FAILED ||
       order.status === OrderStatus.PENDING,
     createdAt: order.createdAt,
+    ...(order.user
+      ? { agentId: order.user.id, agentName: order.user.fullName ?? null }
+      : {}),
   };
 }
