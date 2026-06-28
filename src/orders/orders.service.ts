@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   BadRequestException,
   ForbiddenException,
@@ -5,8 +7,10 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AppEvents } from '../shared/services/app-events.service';
 import { randomBytes } from 'crypto';
 import { OrderRepository } from './repositories/order.repository';
 import { Order } from './entities/order.entity';
@@ -39,11 +43,12 @@ import { AuditService } from '../audit/audit.service';
 import { LogAction } from '../audit/log-action.types';
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit {
   private readonly _logger = new Logger(OrdersService.name);
   private readonly _platformVendorKey: string;
 
   constructor(
+    private readonly _appEvents: AppEvents,
     private readonly _orderRepo: OrderRepository,
     private readonly _packageRepo: PackageRepository,
     private readonly _walletRepo: WalletRepository,
@@ -60,6 +65,17 @@ export class OrdersService {
       'PLATFORM_DEFAULT_VENDOR_API_KEY',
       '',
     );
+  }
+
+  onModuleInit(): void {
+    // Webhook-driven fulfilment: when a shop charge is confirmed, fulfil it.
+    this._appEvents.onShopOrderPaid(({ reference }) => {
+      this.confirmShopOrder(reference).catch((error) =>
+        this._logger.error(
+          `Webhook fulfilment failed for ${reference}: ${(error as Error).message}`,
+        ),
+      );
+    });
   }
 
   // ── Agent dashboard order (wallet-paid) ──────────────────────
@@ -348,6 +364,18 @@ export class OrdersService {
       await this._paymentService.verifyChargeSucceeded(paystackReference);
     if (!charge.success) {
       throw new BadRequestException('Payment not completed.');
+    }
+
+    // Race guard: only the caller that flips PENDING -> PROCESSING fulfils, so
+    // the webhook and the customer's confirm call can't both place the order.
+    const claimed = await this._orderRepo.claimForFulfilment(order.id);
+    if (!claimed) {
+      const current =
+        await this._orderRepo.findByPaystackReference(paystackReference);
+      return {
+        message: 'Order already processed',
+        data: toOrderView(current ?? order),
+      };
     }
 
     const owner = await this._userRepo.find(order.userId);
