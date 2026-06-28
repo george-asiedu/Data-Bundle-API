@@ -1,5 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
+import { SupplierName } from '../../orders/orders.types';
 
 export class VerifyBankDto {
   @ApiProperty({ example: '0123456789' })
@@ -35,4 +42,14 @@ export class CompleteFinancialSetupDto {
   @IsString()
   @IsOptional()
   vendorApiKey?: string;
+
+  @ApiPropertyOptional({
+    enum: SupplierName,
+    example: SupplierName.XPRESS,
+    description:
+      'Which supplier the provided key belongs to. Defaults to XPRESS (the platform supplier) when omitted or when no key is provided.',
+  })
+  @IsEnum(SupplierName)
+  @IsOptional()
+  vendorApiKeySupplier?: SupplierName;
 }

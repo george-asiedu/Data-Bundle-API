@@ -22,6 +22,7 @@ export enum OrderPaymentMethod {
 /** Upstream fulfilment suppliers. Add new ones here as we integrate them. */
 export enum SupplierName {
   VERDEACCESS = 'VERDEACCESS',
+  XPRESS = 'XPRESS',
 }
 
 /** Input the supplier abstraction needs to place a bundle order. */

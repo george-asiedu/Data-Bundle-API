@@ -19,7 +19,7 @@ import { User } from '../auth/entities/user.entity';
 import { PaginatorBuilder } from '../shared/services/paginator.provider';
 import { QueryPaginatorDto } from '../lib/dto/query-paginator.dto';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto } from './dto/orders.dto';
+import { CreateBulkOrderDto, CreateOrderDto } from './dto/orders.dto';
 
 @ApiTags('Orders')
 @UseGuards(AuthGuard)
@@ -36,6 +36,13 @@ export class OrdersController {
   @Post()
   place(@Body() body: CreateOrderDto, @CurrentUser() user: User) {
     return this._ordersService.placeAgentOrder(user, body);
+  }
+
+  @ApiOperation({ summary: 'Place multiple bundle orders in one request' })
+  @HttpCode(HttpStatus.CREATED)
+  @Post('bulk')
+  placeBulk(@Body() body: CreateBulkOrderDto, @CurrentUser() user: User) {
+    return this._ordersService.placeAgentOrdersBulk(user, body.orders);
   }
 
   @ApiOperation({ summary: 'List my orders' })

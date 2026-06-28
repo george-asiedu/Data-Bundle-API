@@ -12,6 +12,7 @@ import {
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { AccountStatus, AuthProvider, Role } from '../auth.types';
+import { SupplierName } from '../../orders/orders.types';
 import { Wallet } from '../../payment/entities/wallet.entity';
 import { Transaction } from '../../payment/entities/transactions.entity';
 
@@ -77,6 +78,19 @@ export class User {
   @Column({ name: 'api_key', nullable: true })
   @Exclude()
   apiKey?: string;
+
+  /**
+   * Which supplier the stored `apiKey` belongs to. Defaults to XPRESS — the
+   * platform's default supplier — which is also used when the user has no key
+   * of their own (then `apiKey` resolves to the platform XPRESS key).
+   */
+  @Column({
+    name: 'api_key_supplier',
+    type: 'enum',
+    enum: SupplierName,
+    default: SupplierName.XPRESS,
+  })
+  apiKeySupplier: SupplierName;
 
   @Column({ name: 'business_name', nullable: true })
   businessName?: string;

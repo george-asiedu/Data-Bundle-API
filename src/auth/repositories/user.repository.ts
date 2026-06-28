@@ -9,6 +9,7 @@ import {
 } from '../auth.types';
 import { User } from '../entities/user.entity';
 import { LogoDto } from '../dto/logo.dto';
+import { SupplierName } from '../../orders/orders.types';
 
 @Injectable()
 export class UserRepository {
@@ -84,6 +85,7 @@ export class UserRepository {
         | 'settlementBankAccount'
         | 'accountNumber'
         | 'apiKey'
+        | 'apiKeySupplier'
         | 'logoShortUrl'
         | 'logoLongUrl'
       >
@@ -105,6 +107,7 @@ export class UserRepository {
     user.registrationReference =
       data.registrationReference ?? user.registrationReference;
     user.apiKey = data.apiKey ?? user.apiKey;
+    user.apiKeySupplier = data.apiKeySupplier ?? user.apiKeySupplier;
     user.logoLongUrl = data.logoLongUrl ?? user.logoLongUrl;
     user.logoShortUrl = data.logoShortUrl ?? user.logoShortUrl;
     if (data.lastLoginAt !== undefined) {
@@ -120,6 +123,24 @@ export class UserRepository {
       .orWhere('email=:value')
       .setParameters({ value })
       .getOne();
+  }
+
+  /**
+   * Sets (or clears, with null) a user's stored supplier API key, optionally
+   * updating which supplier the key belongs to.
+   */
+  async setApiKey(
+    userId: string,
+    encryptedKey: string | null,
+    supplier?: SupplierName,
+  ): Promise<void> {
+    await this._dataSource.getRepository(User).update(
+      { id: userId },
+      {
+        apiKey: encryptedKey as string | undefined,
+        ...(supplier ? { apiKeySupplier: supplier } : {}),
+      },
+    );
   }
 
   /**

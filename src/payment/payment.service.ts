@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { ApplicationException } from '../lib/exception/app.exception';
+import { SupplierName } from '../orders/orders.types';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
 import {
   PaystackCreateSubaccountResponse,
@@ -63,9 +64,12 @@ export class PaymentService {
       'PAYSTACK_BASE_URL',
       'https://paystack.co',
     );
-    this._vendorApiKey = this._configService.get<string>(
-      'PLATFORM_DEFAULT_VENDOR_API_KEY',
-    ) as string;
+    // Platform fallback supplier key: XpresPortal is the default supplier, so an
+    // agent without their own key inherits the platform XpresPortal key.
+    this._vendorApiKey =
+      this._configService.get<string>('XPRESS_API_KEY') ??
+      this._configService.get<string>('PLATFORM_DEFAULT_VENDOR_API_KEY') ??
+      '';
 
     // A single pre-configured client for every Paystack call. The explicit
     // timeout is critical: without it a slow/hanging gateway request keeps the
@@ -839,10 +843,15 @@ export class PaymentService {
 
       queryRunner = await this._queryRunnerExec.getRunner();
 
+      // Agents may bring their own supplier key (Verdeaccess or XpresPortal);
+      // otherwise they fall back to the platform key, which is XpresPortal's.
+      let apiKeySupplier: SupplierName;
       if (payload.vendorApiKey) {
         user.apiKey = this._encryptionService.encrypt(payload.vendorApiKey);
+        apiKeySupplier = payload.vendorApiKeySupplier ?? SupplierName.XPRESS;
       } else {
         user.apiKey = this._encryptionService.encrypt(this._vendorApiKey);
+        apiKeySupplier = SupplierName.XPRESS;
       }
 
       await this._userRepo.update(queryRunner, user, {
@@ -851,6 +860,7 @@ export class PaymentService {
         accountNumber: payload.accountNumber,
         businessName: payload.businessName,
         apiKey: user.apiKey,
+        apiKeySupplier,
       });
       await this._queryRunnerExec.commit(queryRunner);
 

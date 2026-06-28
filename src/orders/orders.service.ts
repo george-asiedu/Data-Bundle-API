@@ -61,10 +61,11 @@ export class OrdersService implements OnModuleInit {
     private readonly _paymentService: PaymentService,
     private readonly _config: ConfigService,
   ) {
-    this._platformVendorKey = this._config.get<string>(
-      'PLATFORM_DEFAULT_VENDOR_API_KEY',
-      '',
-    );
+    // Xpress is the default supplier, so the platform fulfilment key is the
+    // Xpress key; fall back to the legacy vendor key if it isn't set.
+    this._platformVendorKey =
+      this._config.get<string>('XPRESS_API_KEY', '') ||
+      this._config.get<string>('PLATFORM_DEFAULT_VENDOR_API_KEY', '');
   }
 
   onModuleInit(): void {
@@ -177,6 +178,65 @@ export class OrdersService implements OnModuleInit {
     return {
       message: this._placementMessage(fulfilled.status),
       data: toOrderView(fulfilled),
+    };
+  }
+
+  /**
+   * Places several agent orders in one request. Each item is charged and
+   * fulfilled independently so a single failure (bad number, insufficient
+   * balance) never blocks the rest; the response reports per-item outcomes.
+   */
+  async placeAgentOrdersBulk(
+    user: User,
+    items: CreateOrderDto[],
+  ): Promise<
+    DataMessage<{
+      placed: number;
+      failed: number;
+      results: Array<{
+        recipientNumber: string;
+        packageId: string;
+        success: boolean;
+        message: string;
+        order?: OrderView;
+      }>;
+    }>
+  > {
+    const results: Array<{
+      recipientNumber: string;
+      packageId: string;
+      success: boolean;
+      message: string;
+      order?: OrderView;
+    }> = [];
+
+    for (const item of items) {
+      try {
+        const placed = await this.placeAgentOrder(user, item);
+        results.push({
+          recipientNumber: item.recipientNumber,
+          packageId: item.packageId,
+          success: true,
+          message: placed.message,
+          order: placed.data,
+        });
+      } catch (error) {
+        results.push({
+          recipientNumber: item.recipientNumber,
+          packageId: item.packageId,
+          success: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Order could not be placed',
+        });
+      }
+    }
+
+    const placed = results.filter((r) => r.success).length;
+    return {
+      message: `Bulk order processed: ${placed} placed, ${results.length - placed} failed`,
+      data: { placed, failed: results.length - placed, results },
     };
   }
 
@@ -451,6 +511,32 @@ export class OrdersService implements OnModuleInit {
     const provider = this._suppliers.get(order.supplier);
     const agentApiKey = this._resolveAgentKey(user);
 
+    // Supplier rule: the order amount must not exceed the agent's remaining
+    // supplier (XpresPortal) wallet balance. Block early (without burning a
+    // retry) when we can read the balance. Supplier balance is in GHS; our
+    // wholesale amount is in pesewas.
+    if (provider.getBalance) {
+      try {
+        const balance = await provider.getBalance(agentApiKey);
+        const requiredGhs = order.wholesaleAmount / 100;
+        if (balance < requiredGhs) {
+          order.supplierStatusCode = null;
+          order.supplierMessage =
+            balance <= 0
+              ? 'Supplier wallet balance is empty'
+              : `Insufficient supplier balance (need GHS ${requiredGhs.toFixed(2)}, have GHS ${balance.toFixed(2)})`;
+          order.status = OrderStatus.FAILED;
+          return this._orderRepo.save(order);
+        }
+      } catch (error) {
+        // Balance lookup failed — don't block fulfilment on it; the place call
+        // below will still surface a definitive rejection if funds are short.
+        this._logger.debug(
+          `Balance check skipped for ${order.id}: ${(error as Error).message}`,
+        );
+      }
+    }
+
     let result: PlaceOrderResult;
     try {
       result = await provider.placeOrder({
@@ -548,7 +634,9 @@ export class OrdersService implements OnModuleInit {
     order.channel = input.channel;
     order.paymentMethod = input.paymentMethod;
     order.status = OrderStatus.PENDING;
-    order.supplier = SupplierName.VERDEACCESS;
+    // Route to the supplier the placing user's key belongs to (defaults to the
+    // platform supplier, XPRESS, when they have no key of their own).
+    order.supplier = input.user.apiKeySupplier ?? SupplierName.XPRESS;
     order.supplierReference = input.reference;
     order.transactionId = input.transactionId ?? null;
     order.paystackReference = input.paystackReference ?? null;

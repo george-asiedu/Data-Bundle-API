@@ -8,6 +8,8 @@ import { OrdersPoller } from './orders.poller';
 import { VerdeaccessProvider } from './suppliers/verdeaccess.provider';
 import { SupplierRegistry } from './suppliers/supplier.registry';
 import { SUPPLIER_PROVIDERS } from './suppliers/supplier.provider';
+import { XpressProvider } from '../xpress/xpress.provider';
+import { XpressModule } from '../xpress/xpress.module';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentModule } from '../payment/payment.module';
 import { PackagesModule } from '../packages/packages.module';
@@ -20,6 +22,7 @@ import { AuditModule } from '../audit/audit.module';
     PaymentModule,
     PackagesModule,
     AuditModule,
+    XpressModule,
   ],
   providers: [
     OrderRepository,
@@ -30,8 +33,11 @@ import { AuditModule } from '../audit/audit.module';
     {
       // The set of supplier integrations the registry resolves from.
       provide: SUPPLIER_PROVIDERS,
-      useFactory: (verde: VerdeaccessProvider) => [verde],
-      inject: [VerdeaccessProvider],
+      useFactory: (verde: VerdeaccessProvider, xpress: XpressProvider) => [
+        verde,
+        xpress,
+      ],
+      inject: [VerdeaccessProvider, XpressProvider],
     },
   ],
   controllers: [OrdersController],

@@ -17,6 +17,12 @@ export interface SupplierProvider {
     reference: string,
     isAtBigtime?: boolean,
   ): Promise<CheckStatusResult>;
+  /**
+   * Supplier wallet balance for the given key (optional — only suppliers that
+   * expose a balance endpoint implement it). Used to block fulfilment when the
+   * supplier wallet is empty.
+   */
+  getBalance?(apiKey?: string): Promise<number>;
 }
 
 /** DI token for the array of registered supplier providers. */
