@@ -57,6 +57,19 @@ export class OrderRepository {
     return await this._repo.save(order);
   }
 
+  /**
+   * Atomically claim a PENDING order for fulfilment (PENDING -> PROCESSING).
+   * Returns true only for the caller that won the claim, so concurrent confirm
+   * and webhook paths can't both fulfil the same order.
+   */
+  async claimForFulfilment(orderId: string): Promise<boolean> {
+    const res = await this._repo.update(
+      { id: orderId, status: OrderStatus.PENDING },
+      { status: OrderStatus.PROCESSING },
+    );
+    return res.affected === 1;
+  }
+
   async findById(id: string): Promise<Order | null> {
     return await this._getQueryBuilder()
       .where('orders.id = :id', { id })
