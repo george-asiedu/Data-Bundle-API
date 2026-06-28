@@ -31,6 +31,7 @@ import { PaymentFailureMailer } from './mailer/payment-failure.mailer';
 import { PaymentSuccessMailer } from './mailer/payment-success.mailer';
 import { EncryptionService } from '../auth/encryption.service';
 import { AuditService } from '../audit/audit.service';
+import { AppEvents } from '../shared/services/app-events.service';
 import { LogAction } from '../audit/log-action.types';
 
 @Injectable()
@@ -53,6 +54,7 @@ export class PaymentService {
     private _paymentSuccessMailer: PaymentSuccessMailer,
     private readonly _encryptionService: EncryptionService,
     private readonly _auditService: AuditService,
+    private readonly _appEvents: AppEvents,
   ) {
     this._paystackSecretKey = this._configService.get<string>(
       'PAYSTACK_SECRET_KEY',
@@ -456,12 +458,13 @@ export class PaymentService {
     const purpose = data.metadata?.purpose as TransactionPurpose;
     const amountInCedis = Number(data.amount) / 100;
 
-    // Shop-order charges are customer payments (no wallet). They're fulfilled by
-    // the shop confirm flow / order poller, not the wallet pipeline here.
+    // Shop-order charges are customer payments (no wallet). Fulfilment is handled
+    // by the Orders module via an event (keeps Payment decoupled from Orders).
     if ((purpose as string) === 'SHOP_ORDER') {
       this._logger.log(
-        `Skipping wallet handling for shop-order charge ${paystackRef}`,
+        `Shop-order charge confirmed (${paystackRef}); emitting for fulfilment`,
       );
+      this._appEvents.emitShopOrderPaid({ reference: paystackRef });
       return;
     }
 
