@@ -78,9 +78,10 @@ export class VerdeaccessProvider implements SupplierProvider {
     };
 
     // Distinct admin key for status checks; falls back to the vendor key.
-    this._adminApiKey =
-      this._config.get<string>('VERDEACCESS_ADMIN_API_KEY') ||
-      this._config.get<string>('PLATFORM_DEFAULT_VENDOR_API_KEY', '');
+    this._adminApiKey = this._config.get<string>(
+      'PLATFORM_DEFAULT_VENDOR_API_KEY',
+      '',
+    );
   }
 
   /**
@@ -146,7 +147,9 @@ export class VerdeaccessProvider implements SupplierProvider {
       });
       data = res.data ?? null;
     } catch (error) {
-      this._logger.warn(
+      // Transient/connectivity issues are expected (e.g. supplier down or
+      // unreachable in dev) — keep at debug so it doesn't flood the logs.
+      this._logger.debug(
         `Verde status check failed (ref ${reference}): ${(error as Error).message}`,
       );
     }
